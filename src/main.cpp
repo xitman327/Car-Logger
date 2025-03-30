@@ -164,24 +164,28 @@ void setup()
 
   Serial.begin(115200);
   ELM_PORT.begin(38400, SERIAL_8N1, 17, 18, false, 2000);
-  telnet.onConnect(telnet_onconnect);
+  // telnet.onConnect(telnet_onconnect);
+  // DEBUG_SERIAL.println("Starting");
+  // Server.on("/", [](){Server.send(200, "text/html", PAGE_MAIN);} );
+  // Server.on("/data", [](){DEBUG_SERIAL.println("starting gshets!"); append_gsheets(); Server.send(200, "text", "ok");} );
 
-  Server.on("/", [](){Server.send(200, "text/html", PAGE_MAIN);} );
-  Server.on("/data", [](){DEBUG_SERIAL.println("starting gshets!"); append_gsheets(); Server.send(200, "text", "ok");} );
+  // Config.autoReset = false;
+  // Config.autoReconnect = true;
+  // Config.reconnectInterval = 6;
+  // Config.retainPortal = true;
+  // Config.ota = AC_OTA_BUILTIN;
+  // Portal.config(Config);
+  // Portal.join(Data);
+  // Portal.begin();
 
-  Config.autoReset = false;
-  Config.autoReconnect = true;
-  Config.reconnectInterval = 6;
-  Config.retainPortal = true;
-  Config.ota = AC_OTA_BUILTIN;
-  Portal.config(Config);
-  Portal.join(Data);
-  Portal.begin();
+  WiFi.begin("Wokwi-GUEST", "", 6);
 
-  init_elm();
+  if(!DEMO_MODE){
+    init_elm();
+  }
 
-  while(!WiFi.isConnected() && millis() < 10000){}
-  telnet.begin(23);
+  // while(!WiFi.isConnected() && millis() < 10000){}
+  // telnet.begin(23);
 
 }
 

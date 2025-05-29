@@ -6,6 +6,8 @@
 #include <WebServer.h>
 #include "AutoConnect.h"
 #include "ESPTelnet.h"
+#include "time.h"
+#include "ArduinoJson.h"
 
 ESPTelnet telnet;
 
@@ -45,9 +47,26 @@ unsigned long lastSendTime = 0;
 const unsigned long sendInterval = 10000; // 10 seconds in milliseconds
 
 
-int intValue = 0;
-float floatValue = 0.01;
-String stringValue = "";
+// Variable to save USER UID
+String uid;
+
+// Database main path (to be updated in setup with the user UID)
+String databasePath;
+// Database child nodes
+String tempPath = "/temperature";
+String humPath = "/humidity";
+String presPath = "/pressure";
+String timePath = "/timestamp";
+
+// Parent Node (to be updated in every loop)
+String parentPath;
+
+int timestamp;
+
+const char* ntpServer = "pool.ntp.org";
+
+object_t jsonData, obj1, obj2, obj3, obj4;
+JsonWriter writer;
 
 
 #include "ELMduino.h"
@@ -59,6 +78,7 @@ String stringValue = "";
 ELM327 myELM327;
 
 float consum_l_s /* L/s consumption*/, kms/*Km/s*/, lpkm/*L/km*/, gfps, lbsps, rpmn/*rpm*/, kmph, maf, fuel_level;
+float lpkm_max/*L/km*/, rpmn_max/*rpm*/, kmph_max;
 bool engine_on;
 
 
@@ -105,6 +125,8 @@ unsigned long getTime() {
   return now;
 }
 
+
+
 void setup()
 {
 
@@ -140,7 +162,7 @@ void setup()
 
   while(!WiFi.isConnected() && millis() < 10000){}
   telnet.begin(23);
-
+  
 }
 
 #define afr_gassoline 14.7
@@ -151,6 +173,31 @@ void setup()
 uint32_t tm_convertion, tm_obdpull, tm_t_consum;
 float lts_trip;
 
+
+float temperature;
+float humidity;
+float pressure;
+
+long trip_distance_km = 0 ;
+long trip_time_s = 0;
+
+String time_and_distance;
+
+JsonDocument trips[10];
+JsonDocument single_trip_data;
+
+void populate_current_json(){
+
+  kmph_max = max(kmph_max, kmph);
+  single_trip_data["top_speed"] = kmph_max;
+
+  lpkm_max = max(lpkm_max, lpkm);
+  single_trip_data["max_consumption"] = lpkm_max;
+
+  single_trip_data[""]
+
+}
+
 void loop()
 {
   app.loop();
@@ -160,17 +207,32 @@ void loop()
     if (currentTime - lastSendTime >= sendInterval){
       lastSendTime = currentTime;
       
-      // send a string
-      stringValue = "value_" + String(currentTime);
-      Database.set<String>(aClient, "/test/string", stringValue, processData, "RTDB_Send_String");
-      // send an int
-      Database.set<int>(aClient, "/test/int", intValue, processData, "RTDB_Send_Int");
-      intValue++; //increment intValue in every loop
+      uid = app.getUid().c_str();
 
-      // send a string
-      floatValue = 0.01 + random (0,100);
-      Database.set<float>(aClient, "/test/float", floatValue, processData, "RTDB_Send_Float");
+      // Update database path
+      databasePath = "/UsersData/" + uid + "/readings";
 
+      //Get current timestamp
+      timestamp = getTime();
+      Serial.print ("time: ");
+      Serial.println (timestamp);
+
+      parentPath= databasePath + "/" + String(trip_time_s) + "_s__" + String(trip_distance_km) + "_km__" + String(timestamp);
+
+      // Get sensor readings
+      temperature = 12;
+      humidity = 14;
+      pressure = 15;
+
+      // Create a JSON object with the data
+      writer.create(obj1, tempPath, temperature);
+      writer.create(obj2, humPath, humidity);
+      writer.create(obj3, presPath, pressure);
+      writer.create(obj4, timePath, timestamp);
+      writer.join(jsonData, 4, obj1, obj2, obj3, obj4);
+
+      Database.set<object_t>(aClient, parentPath, jsonData, processData, "RTDB_Send_Data");
+    
     }
   }
 

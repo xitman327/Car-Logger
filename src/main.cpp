@@ -19,6 +19,7 @@ AutoConnectConfig Config;       // Enable autoReconnect supported on v0.9.4
 #define ENABLE_USER_AUTH
 #define ENABLE_DATABASE
 #define ENABLE_FS
+// #include "FirebaseFS.h"
 #include <FirebaseClient.h>
 #include <ExampleFunctions.h>
 
@@ -45,6 +46,7 @@ WiFiClientSecure ssl_client;
 using AsyncClient = AsyncClientClass;
 AsyncClient aClient(ssl_client);
 RealtimeDatabase Database;
+AsyncResult databaseResult;
 
 // Timer variables for sending data every 10 seconds
 unsigned long lastSendTime = 0;
@@ -68,9 +70,6 @@ String parentPath;
 int timestamp;
 
 const char* ntpServer = "pool.ntp.org";
-
-object_t jsonData, obj1, obj2, obj3, obj4;
-JsonWriter writer;
 
 
 #include "ELMduino.h"
@@ -141,16 +140,21 @@ void setup()
   DEBUG_SERIAL.println("Starting");
 
   if(MY_FS.begin()){
+    Serial.println("FS STARTED");
     FS_STARTED = 1;
   }else{
     if(MY_FS.format()){
+      Serial.println("FS FORMAT");
       if(MY_FS.begin()){
+        Serial.println("FS STARTED");
         FS_STARTED = 1;
       }else{
         FS_STARTED = 0;
+        Serial.println("FS FAILLED");
       }
     }
     else{
+      Serial.println("FS FORMAT FAILLED");
       FS_STARTED = 0;
     }
   }
@@ -171,9 +175,11 @@ void setup()
     init_elm();
   }
 
-  ssl_client.setInsecure();
-  // ssl_client.setConnectionTimeout(1000);
-  ssl_client.setHandshakeTimeout(5);
+  set_ssl_client_insecure_and_buffer(ssl_client);
+
+  // ssl_client.setInsecure();
+  // // ssl_client.setConnectionTimeout(1000);
+  // ssl_client.setHandshakeTimeout(5);
   
   // Initialize Firebase
   initializeApp(aClient, app, getAuth(user_auth), processData, "🔐 authTask");
@@ -212,16 +218,22 @@ float current_consumption_l = 0;
 
 bool log_started = 0;
 
-FileConfig upload_data("/trip_data1.bin", file_operation_callback);     // Can be set later with upload_data.setFile("/upload.bin", fileCallback);
-
+FileConfig upload_data("/trip.bin", file_operation_callback);     // Can be set later with upload_data.setFile("/upload.bin", fileCallback);
+char time_string[32];
 void trip_start(){
   log_started = 1;
   single_trip_data.clear();
+  trip_distance_km = 0;
   trip_locations_count = 0;
+  single_trip_data["start_timestamp"] = getTime();
+  time_t t = single_trip_data["start_timestamp"];
+  struct tm *lt = localtime(&t);
+  strftime(time_string, sizeof(time_string), "%Y.%m.%d:%H.%M.%S", lt);
+  single_trip_data["start_timestamp_string"] = time_string;
 }
 
-
 void populate_current_json(){
+
 
   kmph_max = max(kmph_max, kmph);
   single_trip_data["top_speed"] = kmph_max;
@@ -229,13 +241,17 @@ void populate_current_json(){
   lpkm_max = max(lpkm_max, lpkm);
   single_trip_data["max_consumption"] = lpkm_max;
 
-  single_trip_data["trip_distance"] = (float)0;
+  single_trip_data["trip_distance"] = trip_distance_km;
 
   single_trip_data["trip_locations_count"] = ++trip_locations_count;
   single_trip_data["trip_locations"][trip_locations_count]["time"] = getTime();
+  time_t t = single_trip_data["trip_locations"][trip_locations_count]["time"];
+  struct tm *lt = localtime(&t);
+  strftime(time_string, sizeof(time_string), "%Y.%m.%d:%H.%M.%S", lt);
+  single_trip_data["trip_locations"][trip_locations_count]["time_string"] = time_string;
   single_trip_data["trip_locations"][trip_locations_count]["log"] = (float) 0;
   single_trip_data["trip_locations"][trip_locations_count]["lat"] = (float) 0;
-  single_trip_data["trip_locations"][trip_locations_count]["dist_traveled"] = (float) 0;
+  single_trip_data["trip_locations"][trip_locations_count]["dist_traveled"] = trip_distance_km;
   single_trip_data["trip_locations"][trip_locations_count]["speed"] = kmph;
   single_trip_data["trip_locations"][trip_locations_count]["rpm"] = rpmn;
   single_trip_data["trip_locations"][trip_locations_count]["engine_temp"] = engine_temp;
@@ -248,15 +264,22 @@ void populate_current_json(){
 
 void trip_end(){
   log_started = 0;
-
+  single_trip_data["end_timestamp"] = getTime();
+  time_t t = single_trip_data["end_timestamp"];
+  struct tm *lt = localtime(&t);
+  strftime(time_string, sizeof(time_string), "%Y.%m.%d:%H.%M.%S", lt);
+  single_trip_data["end_timestamp_string"] = time_string;
+  single_trip_data["trip duration"] =(long) single_trip_data["end_timestamp"].as<long>() - single_trip_data["start_timestamp"].as<long>();
   if(FS_STARTED){
-    File file = MY_FS.open("/trip_data1.bin", "w+", true);
+    File file = MY_FS.open("/trip.bin", "w", true);
     if(file){
-      serializeJson(single_trip_data, Serial);
-      Serial.printf("%d data serialized \n\n", (uint32_t)serializeJson(single_trip_data, file));
+      serializeJsonPretty(single_trip_data, Serial);
+      Serial.println();
+      Serial.printf("%d data serialized \n", (uint32_t)serializeJson(single_trip_data, file));
       file.close();
     }else{
       Serial.println("file error");
+      file.close();
     }
   }else{
     Serial.println("FS not started");
@@ -266,13 +289,19 @@ void trip_end(){
 
     uid = app.getUid().c_str();
     // Update database path
+    timestamp = getTime();
     databasePath = "/UsersData/" + uid + "/readings";
     trip_distance_km = single_trip_data["trip_distance"];
-    parentPath= databasePath + "/" + String(trip_time_s) + "_s__" + String(trip_distance_km) + "_km__" + String(timestamp);
-
-
-    // Database.set<JsonArray>(aClient, parentPath, single_trip_data.to<JsonArray>(), processData, "RTDB_Send_Data");
-    Database.set(aClient, parentPath, getFile(upload_data), processData, "⬆️  uploadTask");
+    trip_time_s = single_trip_data["trip duration"];
+    time_t t = timestamp;
+    struct tm *lt = localtime(&t);
+    strftime(time_string, sizeof(time_string), "%Y_%m_%d__%H_%M_%S", lt);
+    parentPath= databasePath + "/" + String(trip_time_s) + "_s__" + String(trip_distance_km) + "_km__" + String(time_string);
+    // String trip_data_string;
+    // serializeJson(single_trip_data, trip_data_string);
+    Database.set<object_t>(aClient, parentPath, object_t(single_trip_data.as<String>()), processData, "RTDB_Send_Data");
+    // bool status = Database.set(aClient, parentPath, getFile(upload_data));
+    // Database.set(aClient, "/examples/File/data1", getFile(upload_data), processData, "⬆️  uploadTask");
 
   }else{
     if(!app.ready()){
@@ -290,7 +319,7 @@ uint32_t tm_log;
 void loop()
 {
   app.loop();
-
+  processData(databaseResult);
   // if(app.ready()){
   //   unsigned long currentTime = millis();
   //   if (currentTime - lastSendTime >= sendInterval){
@@ -344,8 +373,8 @@ void loop()
         char kjl = Serial.read();
         if(kjl == 'K'){
           rpmn = 2400;
-          kmph = 123;
-          maf = 1.7;
+          kmph = 140;
+          maf = 5.7;
         }else if (kjl == 'L'){
           rpmn = 0;
           kmph = 0;
@@ -465,7 +494,7 @@ void loop()
     }
 
     // consum_l_s = maf / ((1/afr_gassoline)* (1/dens_gassoline));
-    if(kmph < 1.0){
+    if(kmph < (float)0.5){
       kms = kmph * (1.0/3600.0);
       // lpkm = consum_l_s / (kms+0.1);
       lpkm = (float)(3600.0*maf)/(9069.90*kms);
@@ -480,12 +509,15 @@ void loop()
       tm_t_consum = millis();
       current_consumption_l = lt_dts;
       lts_trip += lt_dts;
+      float moving_speed_attime = kmph * 0.0002777778;
+      trip_distance_km += moving_speed_attime;
+
     }
     
     
 
 
-    DEBUG_SERIAL.printf("%f RPM %f kmh %f kms %f maf %f l/km %f l/s %f lt trip \r\n", rpmn, kmph, kms, maf, lpkm, consum_l_s, lts_trip);
+    // DEBUG_SERIAL.printf("%f RPM %f kmh %f kms %f maf %f l/km %f l/s %f lt trip \r\n", rpmn, kmph, kms, maf, lpkm, consum_l_s, lts_trip);
   }
 
   if(millis() - tm_log > log_time){

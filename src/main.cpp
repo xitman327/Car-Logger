@@ -15,8 +15,12 @@ WebServer Server;
 AutoConnect       Portal(Server);
 AutoConnectConfig Config;       // Enable autoReconnect supported on v0.9.4
 
+#define ENABLE_USER_CONFIG
+#define ENABLE_USER_AUTH
+#define ENABLE_DATABASE
+#define ENABLE_FS
 #include <FirebaseClient.h>
-
+#include <ExampleFunctions.h>
 
 /*
 
@@ -76,7 +80,7 @@ JsonWriter writer;
 
 
 ELM327 myELM327;
-
+float engine_temp;
 float consum_l_s /* L/s consumption*/, kms/*Km/s*/, lpkm/*L/km*/, gfps, lbsps, rpmn/*rpm*/, kmph, maf, fuel_level;
 float lpkm_max/*L/km*/, rpmn_max/*rpm*/, kmph_max;
 bool engine_on;
@@ -86,7 +90,8 @@ bool engine_on;
 typedef enum { ENG_RPM,
                SPEED ,
                MAF,
-               FUEL_LEVEL
+               FUEL_LEVEL,
+               ENG_TEMP
                           } obd_pid_states;
 obd_pid_states obd_state = ENG_RPM;
 
@@ -126,7 +131,7 @@ unsigned long getTime() {
 }
 
 
-
+bool FS_STARTED = 0;
 void setup()
 {
 
@@ -134,6 +139,21 @@ void setup()
   ELM_PORT.begin(38400, SERIAL_8N1, 17, 18, false, 2000);
   telnet.onConnect(telnet_onconnect);
   DEBUG_SERIAL.println("Starting");
+
+  if(MY_FS.begin()){
+    FS_STARTED = 1;
+  }else{
+    if(MY_FS.format()){
+      if(MY_FS.begin()){
+        FS_STARTED = 1;
+      }else{
+        FS_STARTED = 0;
+      }
+    }
+    else{
+      FS_STARTED = 0;
+    }
+  }
 
   Config.autoReset = false;
   Config.autoReconnect = true;
@@ -186,6 +206,21 @@ String time_and_distance;
 JsonDocument trips[10];
 JsonDocument single_trip_data;
 
+uint32_t trip_locations_count = 0;
+
+float current_consumption_l = 0;
+
+bool log_started = 0;
+
+FileConfig upload_data("/trip_data1.bin", file_operation_callback);     // Can be set later with upload_data.setFile("/upload.bin", fileCallback);
+
+void trip_start(){
+  log_started = 1;
+  single_trip_data.clear();
+  trip_locations_count = 0;
+}
+
+
 void populate_current_json(){
 
   kmph_max = max(kmph_max, kmph);
@@ -194,47 +229,101 @@ void populate_current_json(){
   lpkm_max = max(lpkm_max, lpkm);
   single_trip_data["max_consumption"] = lpkm_max;
 
-  single_trip_data[""]
+  single_trip_data["trip_distance"] = (float)0;
 
+  single_trip_data["trip_locations_count"] = ++trip_locations_count;
+  single_trip_data["trip_locations"][trip_locations_count]["time"] = getTime();
+  single_trip_data["trip_locations"][trip_locations_count]["log"] = (float) 0;
+  single_trip_data["trip_locations"][trip_locations_count]["lat"] = (float) 0;
+  single_trip_data["trip_locations"][trip_locations_count]["dist_traveled"] = (float) 0;
+  single_trip_data["trip_locations"][trip_locations_count]["speed"] = kmph;
+  single_trip_data["trip_locations"][trip_locations_count]["rpm"] = rpmn;
+  single_trip_data["trip_locations"][trip_locations_count]["engine_temp"] = engine_temp;
+  single_trip_data["trip_locations"][trip_locations_count]["consumption"]["lpkm"] = lpkm;
+  single_trip_data["trip_locations"][trip_locations_count]["consumption"]["lps"] = current_consumption_l;
+  
+
+  Serial.printf("single_trip_data size %d b \n\n", sizeof(single_trip_data));
 }
+
+void trip_end(){
+  log_started = 0;
+
+  if(FS_STARTED){
+    File file = MY_FS.open("/trip_data1.bin", "w+", true);
+    if(file){
+      serializeJson(single_trip_data, Serial);
+      Serial.printf("%d data serialized \n\n", (uint32_t)serializeJson(single_trip_data, file));
+      file.close();
+    }else{
+      Serial.println("file error");
+    }
+  }else{
+    Serial.println("FS not started");
+  }
+
+  if(WiFi.isConnected() && app.ready()){
+
+    uid = app.getUid().c_str();
+    // Update database path
+    databasePath = "/UsersData/" + uid + "/readings";
+    trip_distance_km = single_trip_data["trip_distance"];
+    parentPath= databasePath + "/" + String(trip_time_s) + "_s__" + String(trip_distance_km) + "_km__" + String(timestamp);
+
+
+    // Database.set<JsonArray>(aClient, parentPath, single_trip_data.to<JsonArray>(), processData, "RTDB_Send_Data");
+    Database.set(aClient, parentPath, getFile(upload_data), processData, "⬆️  uploadTask");
+
+  }else{
+    if(!app.ready()){
+      Serial.println("app not ready");
+    }
+    if(!WiFi.isConnected()){
+      Serial.println("WiFi not connected");
+    }
+  }
+}
+
+#define log_time 1000
+uint32_t tm_log;
 
 void loop()
 {
   app.loop();
 
-  if(app.ready()){
-    unsigned long currentTime = millis();
-    if (currentTime - lastSendTime >= sendInterval){
-      lastSendTime = currentTime;
+  // if(app.ready()){
+  //   unsigned long currentTime = millis();
+  //   if (currentTime - lastSendTime >= sendInterval){
+  //     lastSendTime = currentTime;
       
-      uid = app.getUid().c_str();
+  //     uid = app.getUid().c_str();
 
-      // Update database path
-      databasePath = "/UsersData/" + uid + "/readings";
+  //     // Update database path
+  //     databasePath = "/UsersData/" + uid + "/readings";
 
-      //Get current timestamp
-      timestamp = getTime();
-      Serial.print ("time: ");
-      Serial.println (timestamp);
+  //     //Get current timestamp
+  //     timestamp = getTime();
+  //     Serial.print ("time: ");
+  //     Serial.println (timestamp);
 
-      parentPath= databasePath + "/" + String(trip_time_s) + "_s__" + String(trip_distance_km) + "_km__" + String(timestamp);
+  //     parentPath= databasePath + "/" + String(trip_time_s) + "_s__" + String(trip_distance_km) + "_km__" + String(timestamp);
 
-      // Get sensor readings
-      temperature = 12;
-      humidity = 14;
-      pressure = 15;
+  //     // Get sensor readings
+  //     temperature = 12;
+  //     humidity = 14;
+  //     pressure = 15;
 
-      // Create a JSON object with the data
-      writer.create(obj1, tempPath, temperature);
-      writer.create(obj2, humPath, humidity);
-      writer.create(obj3, presPath, pressure);
-      writer.create(obj4, timePath, timestamp);
-      writer.join(jsonData, 4, obj1, obj2, obj3, obj4);
+  //     // Create a JSON object with the data
+  //     writer.create(obj1, tempPath, temperature);
+  //     writer.create(obj2, humPath, humidity);
+  //     writer.create(obj3, presPath, pressure);
+  //     writer.create(obj4, timePath, timestamp);
+  //     writer.join(jsonData, 4, obj1, obj2, obj3, obj4);
 
-      Database.set<object_t>(aClient, parentPath, jsonData, processData, "RTDB_Send_Data");
+  //     Database.set<object_t>(aClient, parentPath, jsonData, processData, "RTDB_Send_Data");
     
-    }
-  }
+  //   }
+  // }
 
 
 
@@ -251,9 +340,21 @@ void loop()
     }
 
     if(DEMO_MODE){
-      rpmn = 2400;
-      kmph = 123;
-      maf = 1.7;
+      while(Serial.available()){
+        char kjl = Serial.read();
+        if(kjl == 'K'){
+          rpmn = 2400;
+          kmph = 123;
+          maf = 1.7;
+        }else if (kjl == 'L'){
+          rpmn = 0;
+          kmph = 0;
+          maf = 0;
+        }
+      }
+      // rpmn = 2400;
+      // kmph = 123;
+      // maf = 1.7;
       fuel_level = 20;
     }else{
       switch (obd_state)
@@ -319,6 +420,23 @@ void loop()
           if (myELM327.nb_rx_state == ELM_SUCCESS)
           {
             fuel_level = resp;
+            obd_state = ENG_TEMP;
+          }
+          else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
+          {
+            myELM327.printError();
+            obd_state = ENG_TEMP;
+          }
+          
+          break;
+        }
+        case ENG_TEMP:
+        {
+          float resp = myELM327.engineCoolantTemp();
+          
+          if (myELM327.nb_rx_state == ELM_SUCCESS)
+          {
+            engine_temp = resp;
             obd_state = ENG_RPM;
           }
           else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
@@ -360,13 +478,28 @@ void loop()
       // liters per delta time
       float lt_dts = (consum_l_s / 1000.0) * (millis() - tm_t_consum);
       tm_t_consum = millis();
+      current_consumption_l = lt_dts;
       lts_trip += lt_dts;
     }
     
     
 
 
-    DEBUG_SERIAL.printf("%f RPM %f kmh %f kms %f maf %f l/km %f l/s %f lt trip \r", rpmn, kmph, kms, maf, lpkm, consum_l_s, lts_trip);
+    DEBUG_SERIAL.printf("%f RPM %f kmh %f kms %f maf %f l/km %f l/s %f lt trip \r\n", rpmn, kmph, kms, maf, lpkm, consum_l_s, lts_trip);
+  }
+
+  if(millis() - tm_log > log_time){
+    tm_log = millis();
+
+    if(engine_on && !log_started){
+      trip_start();
+    }else if(!engine_on && log_started){
+      trip_end();
+    }
+    if(log_started){
+      populate_current_json();
+    }
+
   }
   
 
@@ -408,19 +541,61 @@ Diesel: 14.6
 
 
 
-void processData(AsyncResult &aResult) {
-  if (!aResult.isResult())
-    return;
+// void processData(AsyncResult &aResult) {
+//   if (!aResult.isResult())
+//     return;
 
-  if (aResult.isEvent())
-    Firebase.printf("Event task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.eventLog().message().c_str(), aResult.eventLog().code());
+//   if (aResult.isEvent())
+//     Firebase.printf("Event task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.eventLog().message().c_str(), aResult.eventLog().code());
 
-  if (aResult.isDebug())
-    Firebase.printf("Debug task: %s, msg: %s\n", aResult.uid().c_str(), aResult.debug().c_str());
+//   if (aResult.isDebug())
+//     Firebase.printf("Debug task: %s, msg: %s\n", aResult.uid().c_str(), aResult.debug().c_str());
 
-  if (aResult.isError())
-    Firebase.printf("Error task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.error().message().c_str(), aResult.error().code());
+//   if (aResult.isError())
+//     Firebase.printf("Error task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.error().message().c_str(), aResult.error().code());
 
-  if (aResult.available())
-    Firebase.printf("task: %s, payload: %s\n", aResult.uid().c_str(), aResult.c_str());
+//   if (aResult.available())
+//     Firebase.printf("task: %s, payload: %s\n", aResult.uid().c_str(), aResult.c_str());
+// }
+
+void processData(AsyncResult &aResult)
+{
+    // Exits when no result available when calling from the loop.
+    if (!aResult.isResult())
+        return;
+
+    if (aResult.isEvent())
+    {
+        Firebase.printf("Event task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.eventLog().message().c_str(), aResult.eventLog().code());
+    }
+
+    if (aResult.isDebug())
+    {
+        Firebase.printf("Debug task: %s, msg: %s\n", aResult.uid().c_str(), aResult.debug().c_str());
+    }
+
+    if (aResult.isError())
+    {
+        Firebase.printf("Error task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.error().message().c_str(), aResult.error().code());
+    }
+
+    if (aResult.downloadProgress())
+    {
+        Firebase.printf("Download task: %s, downloaded %d%s (%d of %d)\n", aResult.uid().c_str(), aResult.downloadInfo().progress, "%", aResult.downloadInfo().downloaded, aResult.downloadInfo().total);
+        if (aResult.downloadInfo().total == aResult.downloadInfo().downloaded)
+        {
+            Firebase.printf("Download task: %s, complete!✅️\n", aResult.uid().c_str());
+            print_file_content("/download.bin");
+        }
+    }
+
+    if (aResult.uploadProgress())
+    {
+        Firebase.printf("Upload task: %s, uploaded %d%s (%d of %d)\n", aResult.uid().c_str(), aResult.uploadInfo().progress, "%", aResult.uploadInfo().uploaded, aResult.uploadInfo().total);
+        if (aResult.uploadInfo().total == aResult.uploadInfo().uploaded)
+            Firebase.printf("Upload task: %s, complete!✅️\n", aResult.uid().c_str());
+
+        if (aResult.name().length())
+            Firebase.printf("Name: %s\n", aResult.name().c_str());
+    }
 }

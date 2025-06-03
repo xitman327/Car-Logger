@@ -10,7 +10,6 @@
 #include "ArduinoJson.h"
 
 ESPTelnet telnet;
-
 WebServer Server;
 AutoConnect       Portal(Server);
 AutoConnectConfig Config;       // Enable autoReconnect supported on v0.9.4
@@ -129,17 +128,19 @@ unsigned long getTime() {
   return now;
 }
 
+#include "esp32-hal-log.h"
+static const char *TAG = "AW";
 
 bool FS_STARTED = 0;
 void setup()
 {
-
+  esp_log_level_set("*",ESP_LOG_INFO);
   Serial.begin(115200);
   ELM_PORT.begin(38400, SERIAL_8N1, 17, 18, false, 2000);
   telnet.onConnect(telnet_onconnect);
   DEBUG_SERIAL.println("Starting");
 
-  if(MY_FS.begin()){
+  if(MY_FS.begin(true)){
     Serial.println("FS STARTED");
     FS_STARTED = 1;
   }else{
@@ -158,6 +159,21 @@ void setup()
       FS_STARTED = 0;
     }
   }
+
+  if(FS_STARTED){
+    File trips_dir = MY_FS.open("/trips");
+    if(!trips_dir){
+      MY_FS.mkdir("/trips");
+    }
+    trips_dir.close();
+    trips_dir = MY_FS.open("/trips");
+    if(!trips_dir){
+      Serial.println("trips folder error");
+    }
+    trips_dir.close();
+  }
+
+
 
   Config.autoReset = false;
   Config.autoReconnect = true;
@@ -187,6 +203,7 @@ void setup()
   Database.url(DATABASE_URL);
 
   while(!WiFi.isConnected() && millis() < 10000){}
+  Serial.printf("Wifi connected %s\n", WiFi.localIP().toString());
   telnet.begin(23);
   
 }
@@ -209,7 +226,7 @@ long trip_time_s = 0;
 
 String time_and_distance;
 
-JsonDocument trips[10];
+// JsonDocument trips[10];
 JsonDocument single_trip_data;
 
 uint32_t trip_locations_count = 0;
@@ -218,7 +235,7 @@ float current_consumption_l = 0;
 
 bool log_started = 0;
 
-FileConfig upload_data("/trip.bin", file_operation_callback);     // Can be set later with upload_data.setFile("/upload.bin", fileCallback);
+// FileConfig upload_data("/trip.bin", file_operation_callback);     // Can be set later with upload_data.setFile("/upload.bin", fileCallback);
 char time_string[32];
 void trip_start(){
   log_started = 1;
@@ -259,10 +276,12 @@ void populate_current_json(){
   single_trip_data["trip_locations"][trip_locations_count]["consumption"]["lps"] = current_consumption_l;
   
 
-  Serial.printf("single_trip_data size %d b \n\n", sizeof(single_trip_data));
+  Serial.printf("single_trip_data size %d b\n", sizeof(single_trip_data));
+  
 }
 
 void trip_end(){
+  //end trip and complete json
   log_started = 0;
   single_trip_data["end_timestamp"] = getTime();
   time_t t = single_trip_data["end_timestamp"];
@@ -270,40 +289,86 @@ void trip_end(){
   strftime(time_string, sizeof(time_string), "%Y.%m.%d:%H.%M.%S", lt);
   single_trip_data["end_timestamp_string"] = time_string;
   single_trip_data["trip duration"] =(long) single_trip_data["end_timestamp"].as<long>() - single_trip_data["start_timestamp"].as<long>();
+  
+  //save json to file with aproperate filename
   if(FS_STARTED){
-    File file = MY_FS.open("/trip.bin", "w", true);
-    if(file){
-      serializeJsonPretty(single_trip_data, Serial);
-      Serial.println();
-      Serial.printf("%d data serialized \n", (uint32_t)serializeJson(single_trip_data, file));
-      file.close();
-    }else{
-      Serial.println("file error");
-      file.close();
-    }
-  }else{
-    Serial.println("FS not started");
-  }
-
-  if(WiFi.isConnected() && app.ready()){
-
-    uid = app.getUid().c_str();
-    // Update database path
-    timestamp = getTime();
-    databasePath = "/UsersData/" + uid + "/readings";
     trip_distance_km = single_trip_data["trip_distance"];
     trip_time_s = single_trip_data["trip duration"];
     time_t t = timestamp;
     struct tm *lt = localtime(&t);
     strftime(time_string, sizeof(time_string), "%Y_%m_%d__%H_%M_%S", lt);
-    parentPath= databasePath + "/" + String(trip_time_s) + "_s__" + String(trip_distance_km) + "_km__" + String(time_string);
-    // String trip_data_string;
-    // serializeJson(single_trip_data, trip_data_string);
-    Database.set<object_t>(aClient, parentPath, object_t(single_trip_data.as<String>()), processData, "RTDB_Send_Data");
-    // bool status = Database.set(aClient, parentPath, getFile(upload_data));
-    // Database.set(aClient, "/examples/File/data1", getFile(upload_data), processData, "⬆️  uploadTask");
-
+    String filename = "/trips/" + String(trip_time_s)+ "_s__" + String(trip_distance_km) + "_km__" + String(time_string) + ".json";
+    File file = MY_FS.open(filename, "w", true);
+    if(file){
+      // serializeJsonPretty(single_trip_data, Serial);
+      Serial.println();
+      Serial.printf("%s %s %d data serialized \n", filename, file.name(), (uint32_t)serializeJson(single_trip_data, file));
+      // file.close();
+    }else{
+      Serial.println("file error");
+      // file.close();
+    }
+    file.close();
   }else{
+    Serial.println("FS not started");
+  }
+}
+
+int num_of_files = 0;
+String dir_filenames_array[10];
+#define max_filenames 10
+
+int get_filenames(){
+  num_of_files = 0;
+  Serial.println("listing files in /trips");
+  File trips = MY_FS.open("/trips");
+  if(trips){
+    File file = trips.openNextFile();
+    while(file){
+      String temp_string = file.name();
+      if(num_of_files && !(dir_filenames_array[num_of_files -1] != temp_string)){
+        break;
+      }
+      dir_filenames_array[num_of_files] = file.name();
+      Serial.printf("%d %s\n", num_of_files, dir_filenames_array[num_of_files]);
+      num_of_files++;
+      file.openNextFile();
+    }
+    file.close();
+  }else{
+    MY_FS.mkdir("/trips");
+  }
+  trips.close();
+  return num_of_files;
+}
+
+
+void delete_all_trips(){
+  for(int i = get_filenames();i>0;i--){
+    MY_FS.remove("/trips/"+dir_filenames_array[i - 1]);
+  }
+}
+
+
+void upload_trip(){
+  Serial.println("uploading data");
+  if(WiFi.isConnected() && app.ready()){
+    for(int i = get_filenames();i>0;i--){
+      File upload_trip = MY_FS.open("/trips/"+dir_filenames_array[i - 1], "r");
+      if(upload_trip){
+        Serial.printf("uploading file %s\n", dir_filenames_array[i - 1]);
+        uid = app.getUid().c_str();
+        databasePath = "/UsersData/" + uid + "/trips/";
+        parentPath = databasePath + dir_filenames_array[i - 1];
+        Database.set<object_t>(aClient, parentPath, object_t(upload_trip), processData, "RTDB_Send_Data");
+      }else{
+        Serial.printf("file %s not found", dir_filenames_array[i - 1]);
+      }
+      upload_trip.close();
+    }
+    Serial.println("done uploading data");
+  }else{
+    Serial.println("error uploading data");
     if(!app.ready()){
       Serial.println("app not ready");
     }
@@ -318,48 +383,11 @@ uint32_t tm_log;
 
 void loop()
 {
+  Portal.handleClient();
   app.loop();
   processData(databaseResult);
-  // if(app.ready()){
-  //   unsigned long currentTime = millis();
-  //   if (currentTime - lastSendTime >= sendInterval){
-  //     lastSendTime = currentTime;
-      
-  //     uid = app.getUid().c_str();
-
-  //     // Update database path
-  //     databasePath = "/UsersData/" + uid + "/readings";
-
-  //     //Get current timestamp
-  //     timestamp = getTime();
-  //     Serial.print ("time: ");
-  //     Serial.println (timestamp);
-
-  //     parentPath= databasePath + "/" + String(trip_time_s) + "_s__" + String(trip_distance_km) + "_km__" + String(timestamp);
-
-  //     // Get sensor readings
-  //     temperature = 12;
-  //     humidity = 14;
-  //     pressure = 15;
-
-  //     // Create a JSON object with the data
-  //     writer.create(obj1, tempPath, temperature);
-  //     writer.create(obj2, humPath, humidity);
-  //     writer.create(obj3, presPath, pressure);
-  //     writer.create(obj4, timePath, timestamp);
-  //     writer.join(jsonData, 4, obj1, obj2, obj3, obj4);
-
-  //     Database.set<object_t>(aClient, parentPath, jsonData, processData, "RTDB_Send_Data");
-    
-  //   }
-  // }
-
-
-
-
-
-
   telnet.loop();
+
 
   if(millis() - tm_obdpull > obd_pull_time){
     tm_obdpull = millis();
@@ -379,6 +407,11 @@ void loop()
           rpmn = 0;
           kmph = 0;
           maf = 0;
+        }else if(kjl == 'J'){
+          upload_trip();
+        }
+        else if(kjl == 'D'){
+          delete_all_trips();
         }
       }
       // rpmn = 2400;
@@ -531,6 +564,26 @@ void loop()
     if(log_started){
       populate_current_json();
     }
+
+    ESP_LOGI(
+        TAG,
+        "Free Heap: %u bytes\n"
+        "  MALLOC_CAP_8BIT      %7zu bytes\n"
+        "  MALLOC_CAP_DMA       %7zu bytes\n"
+        "  MALLOC_CAP_SPIRAM    %7zu bytes\n"
+        "  MALLOC_CAP_INTERNAL  %7zu bytes\n"
+        "  MALLOC_CAP_DEFAULT   %7zu bytes\n"
+        "  MALLOC_CAP_IRAM_8BIT %7zu bytes\n"
+        "  MALLOC_CAP_RETENTION %7zu bytes\n",
+        xPortGetFreeHeapSize(),
+        heap_caps_get_free_size(MALLOC_CAP_8BIT),
+        heap_caps_get_free_size(MALLOC_CAP_DMA),
+        heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+        heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+        heap_caps_get_free_size(MALLOC_CAP_DEFAULT),
+        heap_caps_get_free_size(MALLOC_CAP_IRAM_8BIT),
+        heap_caps_get_free_size(MALLOC_CAP_RETENTION)
+    );
 
   }
   

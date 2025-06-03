@@ -1,18 +1,17 @@
 #define DEMO_MODE 1
 #define DEBUG_SERIAL Serial
+#include "SPIFFS.h"
 #include "user.h"
 #include "WiFi.h"
 #include <WiFiClientSecure.h>
 #include <WebServer.h>
-#include "AutoConnect.h"
-#include "ESPTelnet.h"
+// #include "AutoConnect.h"
 #include "time.h"
 #include "ArduinoJson.h"
 
-ESPTelnet telnet;
-WebServer Server;
-AutoConnect       Portal(Server);
-AutoConnectConfig Config;       // Enable autoReconnect supported on v0.9.4
+// WebServer Server;
+// AutoConnect       Portal(Server);
+// AutoConnectConfig Config;       // Enable autoReconnect supported on v0.9.4
 
 #define ENABLE_USER_CONFIG
 #define ENABLE_USER_AUTH
@@ -57,11 +56,6 @@ String uid;
 
 // Database main path (to be updated in setup with the user UID)
 String databasePath;
-// Database child nodes
-String tempPath = "/temperature";
-String humPath = "/humidity";
-String presPath = "/pressure";
-String timePath = "/timestamp";
 
 // Parent Node (to be updated in every loop)
 String parentPath;
@@ -70,6 +64,7 @@ int timestamp;
 
 const char* ntpServer = "pool.ntp.org";
 
+void upload_trip();
 
 #include "ELMduino.h"
 
@@ -107,15 +102,68 @@ void init_elm(){
   
 }
 
-void telnet_onconnect(String ip){
-
-  DEBUG_SERIAL.println("hello!");
-  DEBUG_SERIAL.println(esp_rom_get_reset_reason(0));
-  DEBUG_SERIAL.println(esp_rom_get_reset_reason(1));
-  DEBUG_SERIAL.println(ESP.getFreeHeap());
-
+void init_firebase(){
+  configTime(0, 0, ntpServer);
+  set_ssl_client_insecure_and_buffer(ssl_client);
+  // Initialize Firebase
+  initializeApp(aClient, app, getAuth(user_auth), processData, "🔐 authTask");
+  app.getApp<RealtimeDatabase>(Database);
+  Database.url(DATABASE_URL);
 }
 
+bool network_found = 0;
+int request_ac_from_phone_state = 0;
+bool request_ac_from_phone(){
+  
+  // Portal.disconnect();
+  // Portal.end();
+  WiFi.disconnect();
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("INEEDHOTSPOT", "INEEDHOTSPOT");
+  while(!WiFi.softAPgetStationNum()){
+    Serial.println("waiting for device");
+    delay(1000);
+  }
+  WiFi.mode(WIFI_STA);
+  int n = 0;
+  while(!network_found){
+    WiFi.scanDelete();
+    n = WiFi.scanNetworks();
+    if(n){
+      for (int i = 0; i < n; ++i) {
+      // Print SSID and RSSI for each network found
+      Serial.print(i + 1);
+      Serial.print(": ");
+      Serial.print(WiFi.SSID(i));
+      Serial.print(" (");
+      Serial.print(WiFi.RSSI(i));
+      Serial.print(")");
+      Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN)?" ":"*");
+      if(WiFi.SSID(i) == WIFI_SSID){
+        Serial.println("prefered network found");
+        // WiFi.mode(WIFI_STA);
+        WiFi.begin(WIFI_SSID, WIFI_PASS);
+        Serial.print("Connecting to WiFi ..");
+        while (WiFi.status() != WL_CONNECTED) {
+          Serial.print('.');
+          delay(1000);
+        }
+        network_found = 1;
+        Serial.println(WiFi.localIP());
+        init_firebase();
+        upload_trip();
+        break;
+      }
+      delay(10);
+      }
+    }
+  }
+
+  
+  WiFi.mode(WIFI_STA);
+  // Portal.begin();
+  return false;
+}
 
 unsigned long getTime() {
   time_t now;
@@ -137,16 +185,15 @@ void setup()
   esp_log_level_set("*",ESP_LOG_INFO);
   Serial.begin(115200);
   ELM_PORT.begin(38400, SERIAL_8N1, 17, 18, false, 2000);
-  telnet.onConnect(telnet_onconnect);
   DEBUG_SERIAL.println("Starting");
 
-  if(MY_FS.begin(true)){
+  if(SPIFFS.begin(true)){
     Serial.println("FS STARTED");
     FS_STARTED = 1;
   }else{
-    if(MY_FS.format()){
+    if(SPIFFS.format()){
       Serial.println("FS FORMAT");
-      if(MY_FS.begin()){
+      if(SPIFFS.begin()){
         Serial.println("FS STARTED");
         FS_STARTED = 1;
       }else{
@@ -160,51 +207,27 @@ void setup()
     }
   }
 
-  if(FS_STARTED){
-    File trips_dir = MY_FS.open("/trips");
-    if(!trips_dir){
-      MY_FS.mkdir("/trips");
-    }
-    trips_dir.close();
-    trips_dir = MY_FS.open("/trips");
-    if(!trips_dir){
-      Serial.println("trips folder error");
-    }
-    trips_dir.close();
-  }
+
+  // Config.autoReset = false;
+  // Config.autoReconnect = true;
+  // Config.reconnectInterval = 6;
+  // Config.retainPortal = true;
+  // Config.ota = AC_OTA_BUILTIN;
+  // Portal.config(Config);
+  // Portal.begin();
 
 
-
-  Config.autoReset = false;
-  Config.autoReconnect = true;
-  Config.reconnectInterval = 6;
-  Config.retainPortal = true;
-  Config.ota = AC_OTA_BUILTIN;
-  Portal.config(Config);
-  Portal.begin();
-
-  // WiFi.begin("Wokwi-GUEST", "", 6);
-
-  configTime(0, 0, ntpServer);
+  
 
   if(!DEMO_MODE){
     init_elm();
   }
 
-  set_ssl_client_insecure_and_buffer(ssl_client);
 
-  // ssl_client.setInsecure();
-  // // ssl_client.setConnectionTimeout(1000);
-  // ssl_client.setHandshakeTimeout(5);
   
-  // Initialize Firebase
-  initializeApp(aClient, app, getAuth(user_auth), processData, "🔐 authTask");
-  app.getApp<RealtimeDatabase>(Database);
-  Database.url(DATABASE_URL);
 
-  while(!WiFi.isConnected() && millis() < 10000){}
-  Serial.printf("Wifi connected %s\n", WiFi.localIP().toString());
-  telnet.begin(23);
+  // while(!WiFi.isConnected() && millis() < 10000){}
+  // Serial.printf("Wifi connected %s\n", WiFi.localIP().toString());
   
 }
 
@@ -226,7 +249,6 @@ long trip_time_s = 0;
 
 String time_and_distance;
 
-// JsonDocument trips[10];
 JsonDocument single_trip_data;
 
 uint32_t trip_locations_count = 0;
@@ -240,6 +262,8 @@ char time_string[32];
 void trip_start(){
   log_started = 1;
   single_trip_data.clear();
+  current_consumption_l = 0;
+  lpkm = 0;
   trip_distance_km = 0;
   trip_locations_count = 0;
   single_trip_data["start_timestamp"] = getTime();
@@ -276,7 +300,7 @@ void populate_current_json(){
   single_trip_data["trip_locations"][trip_locations_count]["consumption"]["lps"] = current_consumption_l;
   
 
-  Serial.printf("single_trip_data size %d b\n", sizeof(single_trip_data));
+  // Serial.printf("single_trip_data size %d b\n", sizeof(single_trip_data));
   
 }
 
@@ -292,17 +316,15 @@ void trip_end(){
   
   //save json to file with aproperate filename
   if(FS_STARTED){
-    trip_distance_km = single_trip_data["trip_distance"];
-    trip_time_s = single_trip_data["trip duration"];
-    time_t t = timestamp;
+    time_t t = single_trip_data["start_timestamp"].as<long>();
     struct tm *lt = localtime(&t);
     strftime(time_string, sizeof(time_string), "%Y_%m_%d__%H_%M_%S", lt);
-    String filename = "/trips/" + String(trip_time_s)+ "_s__" + String(trip_distance_km) + "_km__" + String(time_string) + ".json";
-    File file = MY_FS.open(filename, "w", true);
+    String filename = "/" + String(time_string) + ".json";
+    File file = SPIFFS.open(filename, "w", true);
     if(file){
       // serializeJsonPretty(single_trip_data, Serial);
       Serial.println();
-      Serial.printf("%s %s %d data serialized \n", filename, file.name(), (uint32_t)serializeJson(single_trip_data, file));
+      Serial.printf("%s %d data serialized \n", file.name(), (uint32_t)serializeJson(single_trip_data, file));
       // file.close();
     }else{
       Serial.println("file error");
@@ -315,37 +337,34 @@ void trip_end(){
 }
 
 int num_of_files = 0;
-String dir_filenames_array[10];
+String dir_filenames_array[11];
 #define max_filenames 10
 
 int get_filenames(){
+
   num_of_files = 0;
-  Serial.println("listing files in /trips");
-  File trips = MY_FS.open("/trips");
-  if(trips){
-    File file = trips.openNextFile();
-    while(file){
-      String temp_string = file.name();
-      if(num_of_files && !(dir_filenames_array[num_of_files -1] != temp_string)){
-        break;
-      }
+  Serial.println("listing files in /");
+
+  File root = SPIFFS.open("/");
+ 
+  File file = root.openNextFile();
+ 
+  while(file){
+      if(num_of_files > 10)break;
+      Serial.print("FILE: ");
+      Serial.println(file.name());
       dir_filenames_array[num_of_files] = file.name();
-      Serial.printf("%d %s\n", num_of_files, dir_filenames_array[num_of_files]);
       num_of_files++;
-      file.openNextFile();
-    }
-    file.close();
-  }else{
-    MY_FS.mkdir("/trips");
+      file = root.openNextFile();
   }
-  trips.close();
+
   return num_of_files;
 }
 
 
 void delete_all_trips(){
   for(int i = get_filenames();i>0;i--){
-    MY_FS.remove("/trips/"+dir_filenames_array[i - 1]);
+    MY_FS.remove("/"+dir_filenames_array[max(i - 1, 0)]);
   }
 }
 
@@ -354,19 +373,31 @@ void upload_trip(){
   Serial.println("uploading data");
   if(WiFi.isConnected() && app.ready()){
     for(int i = get_filenames();i>0;i--){
-      File upload_trip = MY_FS.open("/trips/"+dir_filenames_array[i - 1], "r");
+      String temp_string_filename = dir_filenames_array[max(i - 1, 0)];
+      temp_string_filename.remove(temp_string_filename.length() - 5);
+      File upload_trip = SPIFFS.open("/"+temp_string_filename+".json", "r");
       if(upload_trip){
-        Serial.printf("uploading file %s\n", dir_filenames_array[i - 1]);
+        Serial.printf("uploading file %s \n", upload_trip.name());
         uid = app.getUid().c_str();
         databasePath = "/UsersData/" + uid + "/trips/";
-        parentPath = databasePath + dir_filenames_array[i - 1];
-        Database.set<object_t>(aClient, parentPath, object_t(upload_trip), processData, "RTDB_Send_Data");
+        parentPath = databasePath + temp_string_filename;
+        
+        // ensure app is ready before send
+        while(!app.isAuthenticated() || !app.isInitialized() || app.ready()){
+          delay(1000);
+          Serial.println("app not read yet");
+        }
+
+        Database.set<object_t>(aClient, parentPath, object_t(upload_trip.readString()), processData, "RTDB_Send_Data");
+
       }else{
-        Serial.printf("file %s not found", dir_filenames_array[i - 1]);
+        Serial.printf("file %s not found", temp_string_filename);
       }
       upload_trip.close();
     }
     Serial.println("done uploading data");
+    delete_all_trips();
+    Serial.println("deleting old data");
   }else{
     Serial.println("error uploading data");
     if(!app.ready()){
@@ -383,10 +414,8 @@ uint32_t tm_log;
 
 void loop()
 {
-  Portal.handleClient();
+  // Portal.handleClient();
   app.loop();
-  processData(databaseResult);
-  telnet.loop();
 
 
   if(millis() - tm_obdpull > obd_pull_time){
@@ -409,10 +438,15 @@ void loop()
           maf = 0;
         }else if(kjl == 'J'){
           upload_trip();
-        }
-        else if(kjl == 'D'){
+        }else if(kjl == 'D'){
           delete_all_trips();
+        }else if(kjl == 'F'){
+          get_filenames();
+        }else if(kjl == 'H'){
+          request_ac_from_phone();
         }
+
+        
       }
       // rpmn = 2400;
       // kmph = 123;
@@ -565,25 +599,25 @@ void loop()
       populate_current_json();
     }
 
-    ESP_LOGI(
-        TAG,
-        "Free Heap: %u bytes\n"
-        "  MALLOC_CAP_8BIT      %7zu bytes\n"
-        "  MALLOC_CAP_DMA       %7zu bytes\n"
-        "  MALLOC_CAP_SPIRAM    %7zu bytes\n"
-        "  MALLOC_CAP_INTERNAL  %7zu bytes\n"
-        "  MALLOC_CAP_DEFAULT   %7zu bytes\n"
-        "  MALLOC_CAP_IRAM_8BIT %7zu bytes\n"
-        "  MALLOC_CAP_RETENTION %7zu bytes\n",
-        xPortGetFreeHeapSize(),
-        heap_caps_get_free_size(MALLOC_CAP_8BIT),
-        heap_caps_get_free_size(MALLOC_CAP_DMA),
-        heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-        heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-        heap_caps_get_free_size(MALLOC_CAP_DEFAULT),
-        heap_caps_get_free_size(MALLOC_CAP_IRAM_8BIT),
-        heap_caps_get_free_size(MALLOC_CAP_RETENTION)
-    );
+    // ESP_LOGI(
+    //     TAG,
+    //     "Free Heap: %u bytes\n"
+    //     "  MALLOC_CAP_8BIT      %7zu bytes\n"
+    //     "  MALLOC_CAP_DMA       %7zu bytes\n"
+    //     "  MALLOC_CAP_SPIRAM    %7zu bytes\n"
+    //     "  MALLOC_CAP_INTERNAL  %7zu bytes\n"
+    //     "  MALLOC_CAP_DEFAULT   %7zu bytes\n"
+    //     "  MALLOC_CAP_IRAM_8BIT %7zu bytes\n"
+    //     "  MALLOC_CAP_RETENTION %7zu bytes\n",
+    //     xPortGetFreeHeapSize(),
+    //     heap_caps_get_free_size(MALLOC_CAP_8BIT),
+    //     heap_caps_get_free_size(MALLOC_CAP_DMA),
+    //     heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+    //     heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+    //     heap_caps_get_free_size(MALLOC_CAP_DEFAULT),
+    //     heap_caps_get_free_size(MALLOC_CAP_IRAM_8BIT),
+    //     heap_caps_get_free_size(MALLOC_CAP_RETENTION)
+    // );
 
   }
   
@@ -643,44 +677,19 @@ Diesel: 14.6
 //     Firebase.printf("task: %s, payload: %s\n", aResult.uid().c_str(), aResult.c_str());
 // }
 
-void processData(AsyncResult &aResult)
-{
-    // Exits when no result available when calling from the loop.
-    if (!aResult.isResult())
-        return;
+void processData(AsyncResult &aResult) {
+  if (!aResult.isResult())
+    return;
 
-    if (aResult.isEvent())
-    {
-        Firebase.printf("Event task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.eventLog().message().c_str(), aResult.eventLog().code());
-    }
+  if (aResult.isEvent())
+    Firebase.printf("Event task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.eventLog().message().c_str(), aResult.eventLog().code());
 
-    if (aResult.isDebug())
-    {
-        Firebase.printf("Debug task: %s, msg: %s\n", aResult.uid().c_str(), aResult.debug().c_str());
-    }
+  if (aResult.isDebug())
+    Firebase.printf("Debug task: %s, msg: %s\n", aResult.uid().c_str(), aResult.debug().c_str());
 
-    if (aResult.isError())
-    {
-        Firebase.printf("Error task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.error().message().c_str(), aResult.error().code());
-    }
+  if (aResult.isError())
+    Firebase.printf("Error task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.error().message().c_str(), aResult.error().code());
 
-    if (aResult.downloadProgress())
-    {
-        Firebase.printf("Download task: %s, downloaded %d%s (%d of %d)\n", aResult.uid().c_str(), aResult.downloadInfo().progress, "%", aResult.downloadInfo().downloaded, aResult.downloadInfo().total);
-        if (aResult.downloadInfo().total == aResult.downloadInfo().downloaded)
-        {
-            Firebase.printf("Download task: %s, complete!✅️\n", aResult.uid().c_str());
-            print_file_content("/download.bin");
-        }
-    }
-
-    if (aResult.uploadProgress())
-    {
-        Firebase.printf("Upload task: %s, uploaded %d%s (%d of %d)\n", aResult.uid().c_str(), aResult.uploadInfo().progress, "%", aResult.uploadInfo().uploaded, aResult.uploadInfo().total);
-        if (aResult.uploadInfo().total == aResult.uploadInfo().uploaded)
-            Firebase.printf("Upload task: %s, complete!✅️\n", aResult.uid().c_str());
-
-        if (aResult.name().length())
-            Firebase.printf("Name: %s\n", aResult.name().c_str());
-    }
+  if (aResult.available())
+    Firebase.printf("task: %s, payload: %s\n", aResult.uid().c_str(), aResult.c_str());
 }

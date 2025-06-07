@@ -9,6 +9,7 @@
 #include "time.h"
 #include "ArduinoJson.h"
 
+bool FS_STARTED = 0;
 // WebServer Server;
 // AutoConnect       Portal(Server);
 // AutoConnectConfig Config;       // Enable autoReconnect supported on v0.9.4
@@ -20,6 +21,8 @@
 // #include "FirebaseFS.h"
 #include <FirebaseClient.h>
 #include <ExampleFunctions.h>
+
+
 
 /*
 
@@ -102,68 +105,6 @@ void init_elm(){
   
 }
 
-void init_firebase(){
-  configTime(0, 0, ntpServer);
-  set_ssl_client_insecure_and_buffer(ssl_client);
-  // Initialize Firebase
-  initializeApp(aClient, app, getAuth(user_auth), processData, "🔐 authTask");
-  app.getApp<RealtimeDatabase>(Database);
-  Database.url(DATABASE_URL);
-}
-
-bool network_found = 0;
-int request_ac_from_phone_state = 0;
-bool request_ac_from_phone(){
-  
-  // Portal.disconnect();
-  // Portal.end();
-  WiFi.disconnect();
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP("INEEDHOTSPOT", "INEEDHOTSPOT");
-  while(!WiFi.softAPgetStationNum()){
-    Serial.println("waiting for device");
-    delay(1000);
-  }
-  WiFi.mode(WIFI_STA);
-  int n = 0;
-  while(!network_found){
-    WiFi.scanDelete();
-    n = WiFi.scanNetworks();
-    if(n){
-      for (int i = 0; i < n; ++i) {
-      // Print SSID and RSSI for each network found
-      Serial.print(i + 1);
-      Serial.print(": ");
-      Serial.print(WiFi.SSID(i));
-      Serial.print(" (");
-      Serial.print(WiFi.RSSI(i));
-      Serial.print(")");
-      Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN)?" ":"*");
-      if(WiFi.SSID(i) == WIFI_SSID){
-        Serial.println("prefered network found");
-        // WiFi.mode(WIFI_STA);
-        WiFi.begin(WIFI_SSID, WIFI_PASS);
-        Serial.print("Connecting to WiFi ..");
-        while (WiFi.status() != WL_CONNECTED) {
-          Serial.print('.');
-          delay(1000);
-        }
-        network_found = 1;
-        Serial.println(WiFi.localIP());
-        init_firebase();
-        upload_trip();
-        break;
-      }
-      delay(10);
-      }
-    }
-  }
-
-  
-  WiFi.mode(WIFI_STA);
-  // Portal.begin();
-  return false;
-}
 
 unsigned long getTime() {
   time_t now;
@@ -175,74 +116,6 @@ unsigned long getTime() {
   time(&now);
   return now;
 }
-
-#include "esp32-hal-log.h"
-static const char *TAG = "AW";
-
-bool FS_STARTED = 0;
-void setup()
-{
-  esp_log_level_set("*",ESP_LOG_INFO);
-  Serial.begin(115200);
-  ELM_PORT.begin(38400, SERIAL_8N1, 17, 18, false, 2000);
-  DEBUG_SERIAL.println("Starting");
-
-  if(SPIFFS.begin(true)){
-    Serial.println("FS STARTED");
-    FS_STARTED = 1;
-  }else{
-    if(SPIFFS.format()){
-      Serial.println("FS FORMAT");
-      if(SPIFFS.begin()){
-        Serial.println("FS STARTED");
-        FS_STARTED = 1;
-      }else{
-        FS_STARTED = 0;
-        Serial.println("FS FAILLED");
-      }
-    }
-    else{
-      Serial.println("FS FORMAT FAILLED");
-      FS_STARTED = 0;
-    }
-  }
-
-
-  // Config.autoReset = false;
-  // Config.autoReconnect = true;
-  // Config.reconnectInterval = 6;
-  // Config.retainPortal = true;
-  // Config.ota = AC_OTA_BUILTIN;
-  // Portal.config(Config);
-  // Portal.begin();
-
-
-  
-
-  if(!DEMO_MODE){
-    init_elm();
-  }
-
-
-  
-
-  // while(!WiFi.isConnected() && millis() < 10000){}
-  // Serial.printf("Wifi connected %s\n", WiFi.localIP().toString());
-  
-}
-
-#define afr_gassoline 14.7
-#define dens_gassoline 710.0
-
-#define convertion_time 1000
-#define obd_pull_time 200
-uint32_t tm_convertion, tm_obdpull, tm_t_consum;
-float lts_trip;
-
-
-float temperature;
-float humidity;
-float pressure;
 
 long trip_distance_km = 0 ;
 long trip_time_s = 0;
@@ -368,7 +241,7 @@ void delete_all_trips(){
   }
 }
 
-
+bool result_error =0, result_done=0;
 void upload_trip(){
   Serial.println("uploading data");
   if(WiFi.isConnected() && app.ready()){
@@ -377,26 +250,42 @@ void upload_trip(){
       temp_string_filename.remove(temp_string_filename.length() - 5);
       File upload_trip = SPIFFS.open("/"+temp_string_filename+".json", "r");
       if(upload_trip){
+
         Serial.printf("uploading file %s \n", upload_trip.name());
+
         uid = app.getUid().c_str();
         databasePath = "/UsersData/" + uid + "/trips/";
         parentPath = databasePath + temp_string_filename;
-        
-        // ensure app is ready before send
-        while(!app.isAuthenticated() || !app.isInitialized() || app.ready()){
-          delay(1000);
-          Serial.println("app not read yet");
+        Serial.println(parentPath);
+        Serial.println(String(upload_trip.readString()));
+
+        Database.set<object_t>(aClient, parentPath, object_t(String(upload_trip.readString())), processData, "TRIP_DB_Send_Data");
+
+        // bool status = Database.set<object_t>(aClient, parentPath, object_t(String(upload_trip.readString())));
+        // if (status)
+        //     Serial.println("Value set complete.");
+        // else
+        //     Firebase.printf("Error, msg: %s, code: %d\n", aClient.lastError().message().c_str(), aClient.lastError().code());
+        // while(!result_done){
+        //   app.loop();
+        //   yield();
+        // }
+        result_done = 0;
+        Firebase.printf("Error, msg: %s, code: %d\n", aClient.lastError().message().c_str(), aClient.lastError().code());
+        if(!result_error){
+          Serial.println("Upload success");
+        }else{
+          Serial.println("Upload failled");
+          return;
         }
-
-        Database.set<object_t>(aClient, parentPath, object_t(upload_trip.readString()), processData, "RTDB_Send_Data");
-
+        result_error = 0;
       }else{
         Serial.printf("file %s not found", temp_string_filename);
       }
       upload_trip.close();
     }
     Serial.println("done uploading data");
-    delete_all_trips();
+    // delete_all_trips();
     Serial.println("deleting old data");
   }else{
     Serial.println("error uploading data");
@@ -409,6 +298,118 @@ void upload_trip(){
   }
 }
 
+#define wifi_timeout 3000
+uint32_t time_waiting_for_connect = 0;
+void task_upload_data(void * parameter){
+
+  WiFi.mode(WIFI_MODE_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  Serial.printf("Connect to %s %s \n", WIFI_SSID, WIFI_PASS);
+  time_waiting_for_connect = millis();
+  while(!WiFi.isConnected()){ 
+    if(WiFi.status() == WL_CONNECT_FAILED || millis() - time_waiting_for_connect > wifi_timeout){
+      Serial.println("Connection Failled");
+      // vTaskDelete(NULL);
+    }
+  }
+
+  Serial.print("Connected \n");
+
+  // configTime(0, 0, ntpServer);
+  // set_ssl_client_insecure_and_buffer(ssl_client);
+  // initializeApp(aClient, app, getAuth(user_auth), auth_debug_print, "AUTH");
+  // app.autoAuthenticate(true);
+  // app.getApp<RealtimeDatabase>(Database);
+  // Database.url(DATABASE_URL);
+  if(!app.isAuthenticated()){
+    app.authenticate();
+  }
+  
+
+  while(!app.isAuthenticated()){
+    app.loop();
+    yield();
+  }
+
+  if(!app.isAuthenticated() || !app.isInitialized()){
+    Serial.printf("%s %s \nExiting\n", app.isAuthenticated()?"isAuthenticated":"isNotAuthenticated", app.isInitialized()?"isInitialized":"isNotInitialized");
+    // vTaskDelete(NULL);
+  }
+
+
+  if(app.ready()){
+    upload_trip();
+  }
+
+
+  Serial.println("Exiting");
+  // vTaskDelete(NULL);
+}
+
+
+#include "esp32-hal-log.h"
+static const char *TAG = "AW";
+
+
+void setup()
+{
+  WiFi.mode(WIFI_MODE_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.setAutoConnect(true);
+  esp_log_level_set("*",ESP_LOG_INFO);
+  Serial.begin(115200);
+  ELM_PORT.begin(38400, SERIAL_8N1, 17, 18, false, 2000);
+  DEBUG_SERIAL.println("Starting");
+
+  if(SPIFFS.begin(true)){
+    Serial.println("FS STARTED");
+    FS_STARTED = 1;
+  }else{
+    if(SPIFFS.format()){
+      Serial.println("FS FORMAT");
+      if(SPIFFS.begin()){
+        Serial.println("FS STARTED");
+        FS_STARTED = 1;
+      }else{
+        FS_STARTED = 0;
+        Serial.println("FS FAILLED");
+      }
+    }
+    else{
+      Serial.println("FS FORMAT FAILLED");
+      FS_STARTED = 0;
+    }
+  }
+  
+
+  if(!DEMO_MODE){
+    init_elm();
+  }
+
+  configTime(0, 0, ntpServer);
+  set_ssl_client_insecure_and_buffer(ssl_client);
+  initializeApp(aClient, app, getAuth(user_auth), auth_debug_print, "AUTH");
+  app.autoAuthenticate(true);
+  app.getApp<RealtimeDatabase>(Database);
+  Database.url(DATABASE_URL);
+
+
+}
+
+#define afr_gassoline 14.7
+#define dens_gassoline 710.0
+
+#define convertion_time 1000
+#define obd_pull_time 200
+uint32_t tm_convertion, tm_obdpull, tm_t_consum;
+float lts_trip;
+
+
+float temperature;
+float humidity;
+float pressure;
+
+
 #define log_time 1000
 uint32_t tm_log;
 
@@ -416,7 +417,6 @@ void loop()
 {
   // Portal.handleClient();
   app.loop();
-
 
   if(millis() - tm_obdpull > obd_pull_time){
     tm_obdpull = millis();
@@ -443,7 +443,16 @@ void loop()
         }else if(kjl == 'F'){
           get_filenames();
         }else if(kjl == 'H'){
-          request_ac_from_phone();
+          task_upload_data(NULL);
+          // xTaskCreatePinnedToCore(
+          //     task_upload_data,      // Function that should be called
+          //     "Upload to DB",    // Name of the task (for debugging)
+          //     100000,               // Stack size (bytes)
+          //     NULL,               // Parameter to pass
+          //     1,                  // Task priority
+          //     NULL,               // Task handle
+          //     1        // Core you want to run the task on (0 or 1)
+          // );
         }
 
         
@@ -599,25 +608,6 @@ void loop()
       populate_current_json();
     }
 
-    // ESP_LOGI(
-    //     TAG,
-    //     "Free Heap: %u bytes\n"
-    //     "  MALLOC_CAP_8BIT      %7zu bytes\n"
-    //     "  MALLOC_CAP_DMA       %7zu bytes\n"
-    //     "  MALLOC_CAP_SPIRAM    %7zu bytes\n"
-    //     "  MALLOC_CAP_INTERNAL  %7zu bytes\n"
-    //     "  MALLOC_CAP_DEFAULT   %7zu bytes\n"
-    //     "  MALLOC_CAP_IRAM_8BIT %7zu bytes\n"
-    //     "  MALLOC_CAP_RETENTION %7zu bytes\n",
-    //     xPortGetFreeHeapSize(),
-    //     heap_caps_get_free_size(MALLOC_CAP_8BIT),
-    //     heap_caps_get_free_size(MALLOC_CAP_DMA),
-    //     heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-    //     heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-    //     heap_caps_get_free_size(MALLOC_CAP_DEFAULT),
-    //     heap_caps_get_free_size(MALLOC_CAP_IRAM_8BIT),
-    //     heap_caps_get_free_size(MALLOC_CAP_RETENTION)
-    // );
 
   }
   
@@ -652,33 +642,18 @@ Diesel: 14.6
 
 
 
-
-
-
-
-
-
-
-
-// void processData(AsyncResult &aResult) {
-//   if (!aResult.isResult())
-//     return;
-
-//   if (aResult.isEvent())
-//     Firebase.printf("Event task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.eventLog().message().c_str(), aResult.eventLog().code());
-
-//   if (aResult.isDebug())
-//     Firebase.printf("Debug task: %s, msg: %s\n", aResult.uid().c_str(), aResult.debug().c_str());
-
-//   if (aResult.isError())
-//     Firebase.printf("Error task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.error().message().c_str(), aResult.error().code());
-
-//   if (aResult.available())
-//     Firebase.printf("task: %s, payload: %s\n", aResult.uid().c_str(), aResult.c_str());
-// }
+bool upload_progress=0;
 
 void processData(AsyncResult &aResult) {
   if (!aResult.isResult())
+      if(!upload_progress && upload_progress != aResult.uploadProgress()){
+        upload_progress = aResult.uploadProgress();
+      }
+      if(upload_progress && upload_progress != aResult.uploadProgress()){
+        upload_progress = aResult.uploadProgress();
+        result_done = 1;
+      }
+      
     return;
 
   if (aResult.isEvent())
@@ -688,6 +663,7 @@ void processData(AsyncResult &aResult) {
     Firebase.printf("Debug task: %s, msg: %s\n", aResult.uid().c_str(), aResult.debug().c_str());
 
   if (aResult.isError())
+    result_error = 1;
     Firebase.printf("Error task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.error().message().c_str(), aResult.error().code());
 
   if (aResult.available())

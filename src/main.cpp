@@ -107,14 +107,17 @@ void init_elm(){
 
 
 unsigned long getTime() {
-  time_t now;
-  struct tm timeinfo;
-  if (!getLocalTime(&timeinfo)) {
-    //Serial.println("Failed to obtain time");
-    return(0);
+  if(WiFi.isConnected()){
+    time_t now;
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo)) {
+      //Serial.println("Failed to obtain time");
+      return(0);
+    }
+    time(&now);
+    return now;
   }
-  time(&now);
-  return now;
+  return(0);
 }
 
 long trip_distance_km = 0 ;
@@ -144,6 +147,7 @@ void trip_start(){
   struct tm *lt = localtime(&t);
   strftime(time_string, sizeof(time_string), "%Y.%m.%d:%H.%M.%S", lt);
   single_trip_data["start_timestamp_string"] = time_string;
+  Serial.printf("Trip started %s", time_string);
 }
 
 void populate_current_json(){
@@ -186,7 +190,7 @@ void trip_end(){
   strftime(time_string, sizeof(time_string), "%Y.%m.%d:%H.%M.%S", lt);
   single_trip_data["end_timestamp_string"] = time_string;
   single_trip_data["trip duration"] =(long) single_trip_data["end_timestamp"].as<long>() - single_trip_data["start_timestamp"].as<long>();
-  
+  Serial.printf("Trip ended %s", time_string);
   //save json to file with aproperate filename
   if(FS_STARTED){
     time_t t = single_trip_data["start_timestamp"].as<long>();
@@ -256,36 +260,33 @@ void upload_trip(){
         uid = app.getUid().c_str();
         databasePath = "/UsersData/" + uid + "/trips/";
         parentPath = databasePath + temp_string_filename;
-        Serial.println(parentPath);
-        Serial.println(String(upload_trip.readString()));
-
-        Database.set<object_t>(aClient, parentPath, object_t(String(upload_trip.readString())), processData, "TRIP_DB_Send_Data");
-
-        // bool status = Database.set<object_t>(aClient, parentPath, object_t(String(upload_trip.readString())));
-        // if (status)
-        //     Serial.println("Value set complete.");
-        // else
-        //     Firebase.printf("Error, msg: %s, code: %d\n", aClient.lastError().message().c_str(), aClient.lastError().code());
-        // while(!result_done){
-        //   app.loop();
-        //   yield();
-        // }
-        result_done = 0;
-        Firebase.printf("Error, msg: %s, code: %d\n", aClient.lastError().message().c_str(), aClient.lastError().code());
-        if(!result_error){
-          Serial.println("Upload success");
-        }else{
-          Serial.println("Upload failled");
-          return;
+        // Serial.println(parentPath);
+        // Serial.println(String(upload_trip.readString()));
+        // Serial.println();
+        String trip_data;
+        while(upload_trip.available()){
+          trip_data += char(upload_trip.read());
         }
-        result_error = 0;
+        // Serial.println(trip_data);
+
+        Database.set<object_t>(aClient, parentPath, object_t(trip_data), processData, "TRIP_DB_Send_Data");
+
+        // result_done = 0;
+        // Firebase.printf("Error, msg: %s, code: %d\n", aClient.lastError().message().c_str(), aClient.lastError().code());
+        // if(!result_error){
+        //   Serial.println("Upload success");
+        // }else{
+        //   Serial.println("Upload failled");
+        //   return;
+        // }
+        // result_error = 0;
       }else{
         Serial.printf("file %s not found", temp_string_filename);
       }
       upload_trip.close();
     }
     Serial.println("done uploading data");
-    // delete_all_trips();
+    delete_all_trips();
     Serial.println("deleting old data");
   }else{
     Serial.println("error uploading data");
@@ -300,8 +301,12 @@ void upload_trip(){
 
 #define wifi_timeout 3000
 uint32_t time_waiting_for_connect = 0;
-void task_upload_data(void * parameter){
 
+//returns true for error
+bool connect_wifi(){
+  if(WiFi.isConnected()){
+    return false;
+  }
   WiFi.mode(WIFI_MODE_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   Serial.printf("Connect to %s %s \n", WIFI_SSID, WIFI_PASS);
@@ -310,17 +315,28 @@ void task_upload_data(void * parameter){
     if(WiFi.status() == WL_CONNECT_FAILED || millis() - time_waiting_for_connect > wifi_timeout){
       Serial.println("Connection Failled");
       // vTaskDelete(NULL);
+      return true;
     }
   }
 
   Serial.print("Connected \n");
 
-  // configTime(0, 0, ntpServer);
+  configTime(0, 0, ntpServer);
+  return false;
+}
+
+void task_upload_data(void * parameter){
+
+  if(connect_wifi()){
+    return;
+  }
+  
   // set_ssl_client_insecure_and_buffer(ssl_client);
   // initializeApp(aClient, app, getAuth(user_auth), auth_debug_print, "AUTH");
   // app.autoAuthenticate(true);
   // app.getApp<RealtimeDatabase>(Database);
   // Database.url(DATABASE_URL);
+
   if(!app.isAuthenticated()){
     app.authenticate();
   }
@@ -334,6 +350,7 @@ void task_upload_data(void * parameter){
   if(!app.isAuthenticated() || !app.isInitialized()){
     Serial.printf("%s %s \nExiting\n", app.isAuthenticated()?"isAuthenticated":"isNotAuthenticated", app.isInitialized()?"isInitialized":"isNotInitialized");
     // vTaskDelete(NULL);
+    return;
   }
 
 
@@ -388,8 +405,8 @@ void setup()
 
   configTime(0, 0, ntpServer);
   set_ssl_client_insecure_and_buffer(ssl_client);
-  initializeApp(aClient, app, getAuth(user_auth), auth_debug_print, "AUTH");
-  app.autoAuthenticate(true);
+  initializeApp(aClient, app, getAuth(user_auth), 3000, auth_debug_print);
+  app.autoAuthenticate(false);
   app.getApp<RealtimeDatabase>(Database);
   Database.url(DATABASE_URL);
 
@@ -601,6 +618,8 @@ void loop()
 
     if(engine_on && !log_started){
       trip_start();
+      delay(2000);
+      task_upload_data(NULL);
     }else if(!engine_on && log_started){
       trip_end();
     }

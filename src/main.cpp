@@ -6,8 +6,13 @@
 #include <WiFiClientSecure.h>
 #include <WebServer.h>
 // #include "AutoConnect.h"
-#include "time.h"
+// #include "time.h"
 #include "ArduinoJson.h"
+
+#include <LovyanGFX.hpp>
+#include "LGFX_user.h"
+LGFX_ILI9488 lcd;
+
 
 bool FS_STARTED = 0;
 // WebServer Server;
@@ -22,7 +27,10 @@ bool FS_STARTED = 0;
 #include <FirebaseClient.h>
 #include <ExampleFunctions.h>
 
+bool upload_request =0;
 
+float fix_lat, fix_lng;
+bool fix_valid;
 
 /*
 
@@ -74,6 +82,18 @@ void upload_trip();
 
 #define ELM_PORT Serial1
 
+// #include <TinyGPS++.h>
+// #define GPS_SERIAL Serial2  // Using Serial1 for GPS
+// TinyGPSPlus gps;
+
+#include <NMEAGPS.h>
+// #include <GPSport.h>
+NMEAGPS  gps; // This parses the GPS characters
+gps_fix  fix; // This holds on to the latest values
+
+#include <ESP32Time.h>
+ESP32Time rtc;
+
 
 ELM327 myELM327;
 float engine_temp;
@@ -90,20 +110,6 @@ typedef enum { ENG_RPM,
                ENG_TEMP
                           } obd_pid_states;
 obd_pid_states obd_state = ENG_RPM;
-
-void init_elm(){
-  DEBUG_SERIAL.println("Attempting to connect to ELM327...");
-
-  if (!myELM327.begin(ELM_PORT, false, 2000))
-  {
-    DEBUG_SERIAL.println("Couldn't connect to OBD scanner");
-    // while (1);
-  }else{
-    DEBUG_SERIAL.println("Connected to ELM327");
-  }
-
-  
-}
 
 
 unsigned long getTime() {
@@ -142,11 +148,12 @@ void trip_start(){
   lpkm = 0;
   trip_distance_km = 0;
   trip_locations_count = 0;
-  single_trip_data["start_timestamp"] = getTime();
-  time_t t = single_trip_data["start_timestamp"];
-  struct tm *lt = localtime(&t);
-  strftime(time_string, sizeof(time_string), "%Y.%m.%d:%H.%M.%S", lt);
-  single_trip_data["start_timestamp_string"] = time_string;
+  single_trip_data["start_timestamp"] =  rtc.getEpoch();
+  // time_t t = single_trip_data["start_timestamp"];
+  // struct tm *lt = localtime(&t);
+  // strftime(time_string, sizeof(time_string), "%Y.%m.%d:%H.%M.%S", lt);
+  // sprintf(time_string, "%d.%d.%d.%d.%d.%d", rtc.getYear(), rtc.getMonth(), rtc.getDay(), rtc.getHour(), rtc.getMinute(), rtc.getSecond());
+  single_trip_data["start_timestamp_string"] = rtc.getTime("%Y_%m_%d__%H_%M_%S");
   Serial.printf("Trip started %s", time_string);
 }
 
@@ -162,13 +169,14 @@ void populate_current_json(){
   single_trip_data["trip_distance"] = trip_distance_km;
 
   single_trip_data["trip_locations_count"] = ++trip_locations_count;
-  single_trip_data["trip_locations"][trip_locations_count]["time"] = getTime();
-  time_t t = single_trip_data["trip_locations"][trip_locations_count]["time"];
-  struct tm *lt = localtime(&t);
-  strftime(time_string, sizeof(time_string), "%Y.%m.%d:%H.%M.%S", lt);
-  single_trip_data["trip_locations"][trip_locations_count]["time_string"] = time_string;
-  single_trip_data["trip_locations"][trip_locations_count]["log"] = (float) 0;
-  single_trip_data["trip_locations"][trip_locations_count]["lat"] = (float) 0;
+  single_trip_data["trip_locations"][trip_locations_count]["time"] = rtc.getEpoch();
+  // time_t t = single_trip_data["trip_locations"][trip_locations_count]["time"];
+  // struct tm *lt = localtime(&t);
+  // strftime(time_string, sizeof(time_string), "%Y.%m.%d:%H.%M.%S", lt);
+  // sprintf(time_string, "%d.%d.%d.%d.%d.%d", rtc.getYear(), rtc.getMonth(), rtc.getDay(), rtc.getHour(), rtc.getMinute(), rtc.getSecond());
+  single_trip_data["trip_locations"][trip_locations_count]["time_string"] = rtc.getTime("%Y_%m_%d__%H_%M_%S");
+  single_trip_data["trip_locations"][trip_locations_count]["lng"] = fix_lng;
+  single_trip_data["trip_locations"][trip_locations_count]["lat"] = fix_lat;
   single_trip_data["trip_locations"][trip_locations_count]["dist_traveled"] = trip_distance_km;
   single_trip_data["trip_locations"][trip_locations_count]["speed"] = kmph;
   single_trip_data["trip_locations"][trip_locations_count]["rpm"] = rpmn;
@@ -184,19 +192,20 @@ void populate_current_json(){
 void trip_end(){
   //end trip and complete json
   log_started = 0;
-  single_trip_data["end_timestamp"] = getTime();
-  time_t t = single_trip_data["end_timestamp"];
-  struct tm *lt = localtime(&t);
-  strftime(time_string, sizeof(time_string), "%Y.%m.%d:%H.%M.%S", lt);
-  single_trip_data["end_timestamp_string"] = time_string;
+  single_trip_data["end_timestamp"] = rtc.getEpoch();
+  // time_t t = single_trip_data["end_timestamp"];
+  // struct tm *lt = localtime(&t);
+  // strftime(time_string, sizeof(time_string), "%Y.%m.%d:%H.%M.%S", lt);
+  // sprintf(time_string, "%d.%d.%d.%d.%d.%d", rtc.getYear(), rtc.getMonth(), rtc.getDay(), rtc.getHour(), rtc.getMinute(), rtc.getSecond());
+  single_trip_data["end_timestamp_string"] = rtc.getTime("%Y_%m_%d__%H_%M_%S");
   single_trip_data["trip duration"] =(long) single_trip_data["end_timestamp"].as<long>() - single_trip_data["start_timestamp"].as<long>();
-  Serial.printf("Trip ended %s", time_string);
+  Serial.printf("Trip ended %s", single_trip_data["end_timestamp_string"]);
   //save json to file with aproperate filename
   if(FS_STARTED){
-    time_t t = single_trip_data["start_timestamp"].as<long>();
-    struct tm *lt = localtime(&t);
-    strftime(time_string, sizeof(time_string), "%Y_%m_%d__%H_%M_%S", lt);
-    String filename = "/" + String(time_string) + ".json";
+    // time_t t = single_trip_data["start_timestamp"].as<long>();
+    // struct tm *lt = localtime(&t);
+    // strftime(time_string, sizeof(time_string), "%Y_%m_%d__%H_%M_%S", lt);
+    String filename = "/" + single_trip_data["start_timestamp_string"].as<String>() + ".json";
     File file = SPIFFS.open(filename, "w", true);
     if(file){
       // serializeJsonPretty(single_trip_data, Serial);
@@ -245,11 +254,11 @@ void delete_all_trips(){
   }
 }
 
-bool result_error =0, result_done=0;
+bool result_error =0, result_done=0, upload_done = 0;
 void upload_trip(){
   Serial.println("uploading data");
   if(WiFi.isConnected() && app.ready()){
-    for(int i = get_filenames();i>0;i--){
+    for(int i = get_filenames();i>0;i){
       String temp_string_filename = dir_filenames_array[max(i - 1, 0)];
       temp_string_filename.remove(temp_string_filename.length() - 5);
       File upload_trip = SPIFFS.open("/"+temp_string_filename+".json", "r");
@@ -260,9 +269,6 @@ void upload_trip(){
         uid = app.getUid().c_str();
         databasePath = "/UsersData/" + uid + "/trips/";
         parentPath = databasePath + temp_string_filename;
-        // Serial.println(parentPath);
-        // Serial.println(String(upload_trip.readString()));
-        // Serial.println();
         String trip_data;
         while(upload_trip.available()){
           trip_data += char(upload_trip.read());
@@ -271,7 +277,7 @@ void upload_trip(){
 
         Database.set<object_t>(aClient, parentPath, object_t(trip_data), processData, "TRIP_DB_Send_Data");
 
-        // result_done = 0;
+        // result_error = Database.set<object_t>(aClient, parentPath, object_t(trip_data));
         // Firebase.printf("Error, msg: %s, code: %d\n", aClient.lastError().message().c_str(), aClient.lastError().code());
         // if(!result_error){
         //   Serial.println("Upload success");
@@ -280,13 +286,20 @@ void upload_trip(){
         //   return;
         // }
         // result_error = 0;
+
       }else{
         Serial.printf("file %s not found", temp_string_filename);
       }
       upload_trip.close();
+      if(upload_done){
+        upload_done = 0;
+        if(i>0){
+          i--;
+        }
+      }
     }
     Serial.println("done uploading data");
-    delete_all_trips();
+    // delete_all_trips();
     Serial.println("deleting old data");
   }else{
     Serial.println("error uploading data");
@@ -299,83 +312,249 @@ void upload_trip(){
   }
 }
 
-#define wifi_timeout 3000
+#define wifi_timeout 120000
 uint32_t time_waiting_for_connect = 0;
 
-//returns true for error
-bool connect_wifi(){
-  if(WiFi.isConnected()){
-    return false;
-  }
-  WiFi.mode(WIFI_MODE_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  Serial.printf("Connect to %s %s \n", WIFI_SSID, WIFI_PASS);
-  time_waiting_for_connect = millis();
-  while(!WiFi.isConnected()){ 
-    if(WiFi.status() == WL_CONNECT_FAILED || millis() - time_waiting_for_connect > wifi_timeout){
-      Serial.println("Connection Failled");
+int upload_stage=0;
+
+#define wifi_retries 50
+int wifi_retry_count=0;
+
+void task_upload_data(){
+
+  switch (upload_stage){
+
+    case 0:
+      if(WiFi.isConnected()){
+        Serial.println("wifi conneced");
+        
+        wifi_retry_count = 0;
+        upload_stage = 2;
+      }else{
+        WiFi.mode(WIFI_MODE_STA);
+        WiFi.begin(WIFI_SSID, WIFI_PASS);
+        WiFi.setAutoReconnect(true);
+        Serial.printf("Connect to %s %s \n", WIFI_SSID, WIFI_PASS);
+        time_waiting_for_connect = millis();
+        wifi_retry_count = 0;
+        upload_stage = 1;
+      }
+    break;
+
+    case 1:// connect to wifi
+      if(WiFi.isConnected()){
+        upload_stage = 2;
+      }
+      if(!WiFi.isConnected() && (wifi_retry_count > wifi_retries || millis() - time_waiting_for_connect > wifi_timeout)){
+        Serial.println("Connection Timed Out");
+        WiFi.setAutoReconnect(false);
+        upload_stage = 0;
+        upload_request = 0;
+      }
+      
+    break;
+
+    case 2: // app auth
+      // initializeApp(aClient, app, getAuth(user_auth), 3000, auth_debug_print);
+      // app.autoAuthenticate(false);
+      // app.getApp<RealtimeDatabase>(Database);
+      // Database.url(DATABASE_URL);
+      if(app.isAuthenticated() && !app.isExpired() && app.isInitialized()){
+        upload_stage = 3;
+      }else {
+        // initializeApp(aClient, app, getAuth(user_auth), 3000, auth_debug_print);
+        if(!app.isAuthenticated()){
+          app.authenticate();
+        }
+      }
+    break;
+
+    case 3:
+      // wait app to authenticate
+      if(app.isAuthenticated()){
+        app.getApp<RealtimeDatabase>(Database);
+        Database.url(DATABASE_URL);
+        upload_stage = 4;
+      }
+    break;
+
+    case 4:
+      //upload data
+      upload_trip();
+      upload_stage = 5;
+    break;
+
+    case 5:
+
+      if(result_done ==0){
+
+      }
+
+      upload_stage = 0;
+      Serial.println("Exiting");
       // vTaskDelete(NULL);
-      return true;
-    }
-  }
-
-  Serial.print("Connected \n");
-
-  configTime(0, 0, ntpServer);
-  return false;
-}
-
-void task_upload_data(void * parameter){
-
-  if(connect_wifi()){
-    return;
-  }
+      upload_request = 0;
+    break;
   
-  // set_ssl_client_insecure_and_buffer(ssl_client);
-  // initializeApp(aClient, app, getAuth(user_auth), auth_debug_print, "AUTH");
-  // app.autoAuthenticate(true);
-  // app.getApp<RealtimeDatabase>(Database);
-  // Database.url(DATABASE_URL);
-
-  if(!app.isAuthenticated()){
-    app.authenticate();
+  default:
+    break;
   }
+
+  // if(connect_wifi()){
+  //   return;
+  // }
+
+  // if(!app.isAuthenticated()){
+  //   app.authenticate();
+  // }
   
 
-  while(!app.isAuthenticated()){
-    app.loop();
-    yield();
-  }
+  // while(!app.isAuthenticated()){
+  //   app.loop();
+  //   yield();
+  // }
 
-  if(!app.isAuthenticated() || !app.isInitialized()){
-    Serial.printf("%s %s \nExiting\n", app.isAuthenticated()?"isAuthenticated":"isNotAuthenticated", app.isInitialized()?"isInitialized":"isNotInitialized");
-    // vTaskDelete(NULL);
-    return;
-  }
-
-
-  if(app.ready()){
-    upload_trip();
-  }
+  // if(!app.isAuthenticated() || !app.isInitialized()){
+  //   Serial.printf("%s %s \nExiting\n", app.isAuthenticated()?"isAuthenticated":"isNotAuthenticated", app.isInitialized()?"isInitialized":"isNotInitialized");
+  //   // vTaskDelete(NULL);
+  //   return;
+  // }
 
 
-  Serial.println("Exiting");
+  // if(app.ready()){
+  //   upload_trip();
+  // }
+
+
+  // Serial.println("Exiting");
   // vTaskDelete(NULL);
 }
 
+#define NEOPIXEL_PIN 12
+#define NUMPIXELS 15 
+#include <Adafruit_NeoPixel.h>
+Adafruit_NeoPixel pixels(NUMPIXELS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
-#include "esp32-hal-log.h"
-static const char *TAG = "AW";
+void runRgbWave(Adafruit_NeoPixel &strip, int numPixels, uint32_t baseColor, int waveWidth, float speed) {
+  static float wavePosition = 0;
+  
+  // Clear the strip
+  for(int i = 0; i < numPixels; i++) {
+    strip.setPixelColor(i, 0);
+  }
+  
+  // Draw the wave
+  for(int i = 0; i < numPixels; i++) {
+    float distance = fabs(i - wavePosition);
+    
+    if(distance < waveWidth) {
+      // Calculate brightness (1.0 at center, 0.0 at edges)
+      float brightness = 1.0 - (distance / waveWidth);
+      
+      // Extract color components
+      uint8_t r = (baseColor >> 16) & 0xFF;
+      uint8_t g = (baseColor >> 8) & 0xFF;
+      uint8_t b = baseColor & 0xFF;
+      
+      // Apply brightness
+      r *= brightness;
+      g *= brightness;
+      b *= brightness;
+      
+      strip.setPixelColor(i, strip.Color(r, g, b));
+    }
+  }
+  
+  strip.show();
+  
+  // Move wave position
+  wavePosition += speed;
+  if(wavePosition > numPixels + waveWidth) {
+    wavePosition = -waveWidth;
+  }
+}
 
+void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+  switch (event) {
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      Serial.print("WiFi connected! IP address: ");
+      Serial.println(IPAddress(info.got_ip.ip_info.ip.addr));
+      // Your callback code here
+      break;
+      
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+      Serial.println("WiFi lost connection");
+      wifi_retry_count++;
+      break;
+
+    default:
+      break;
+  }
+}
+
+// #include <SPI.h>
+// #include <TFT_eSPI.h>
+// TFT_eSPI tft = TFT_eSPI();
+
+
+
+#define LCD_BL 4
+#define light_sensor 13
+
+HardwareSerial ELMSerial(1);
+
+HardwareSerial gpsSerial(2);
+
+void init_elm(){
+  DEBUG_SERIAL.println("Attempting to connect to ELM327...");
+
+  if (!myELM327.begin(ELMSerial, false, 2000))
+  {
+    DEBUG_SERIAL.println("Couldn't connect to OBD scanner");
+    lcd.setCursor(50, 300);
+    lcd.print("ELM Connect Fault");
+    // while (1);
+  }else{
+    DEBUG_SERIAL.println("Connected to ELM327");
+    lcd.setCursor(50, 300);
+    lcd.print("ELM Connect OK");
+  }
+
+  
+}
 
 void setup()
 {
+  pixels.begin();
+  pixels.clear();
+  // for(int i=0;i<NUMPIXELS; i++){
+  //   pixels.setPixelColor(i, 255,255,255);
+  // }
+  pixels.setBrightness(10);
+  pixels.show();
+
+  analogReadResolution(12);
+  pinMode(light_sensor, ANALOG);
+  pinMode(LCD_BL, OUTPUT);
+  
+  lcd.init();
+  lcd.clearDisplay();
+  lcd.setRotation(3);  // Adjust rotation (0-3)
+  lcd.fillScreen(TFT_BLACK);
+  digitalWrite(LCD_BL, HIGH);
+  lcd.setTextColor(TFT_WHITE);
+  lcd.setTextSize(1);
+  lcd.println("Hello, Xitos!");
+
+  WiFi.onEvent(WiFiEvent);
   WiFi.mode(WIFI_MODE_STA);
   WiFi.setAutoReconnect(true);
   WiFi.setAutoConnect(true);
   esp_log_level_set("*",ESP_LOG_INFO);
   Serial.begin(115200);
-  ELM_PORT.begin(38400, SERIAL_8N1, 17, 18, false, 2000);
+  ELMSerial.begin(38400, SERIAL_8N1, 48, 47, false, 2000);
+  gpsSerial.begin(9600, SERIAL_8N1, 38, 37);
+
   DEBUG_SERIAL.println("Starting");
 
   if(SPIFFS.begin(true)){
@@ -403,7 +582,7 @@ void setup()
     init_elm();
   }
 
-  configTime(0, 0, ntpServer);
+  // configTime(0, 0, ntpServer);
   set_ssl_client_insecure_and_buffer(ssl_client);
   initializeApp(aClient, app, getAuth(user_auth), 3000, auth_debug_print);
   app.autoAuthenticate(false);
@@ -426,14 +605,97 @@ float temperature;
 float humidity;
 float pressure;
 
+static uint8_t hue = 0;
 
 #define log_time 1000
-uint32_t tm_log;
-
+#define led_time 20
+uint32_t tm_log, tm_led;
+char tmp0[100];
+bool fix_valid_time_prev =0, fix_valid_date_prev=0;
 void loop()
 {
   // Portal.handleClient();
-  app.loop();
+
+  if(WiFi.isConnected()){
+    app.loop();
+  }
+  
+
+  if(millis() - tm_led > led_time){
+    tm_led = millis();
+    uint32_t color = pixels.ColorHSV(hue * 256, 255, 255);
+    runRgbWave(pixels, NUMPIXELS, color, 10, 0.5);
+    hue++; // Cycle through colors
+  }
+  
+
+  while (gps.available( gpsSerial )) {
+    fix = gps.read();
+
+    // if(fix.valid.time != fix_valid_time_prev && fix.valid.date != fix_valid_date_prev){
+    //   fix_valid_time_prev = fix.valid.time;
+    //   fix_valid_date_prev = fix.valid.date;
+    //   if(fix.valid.time && fix.valid.date){
+    //     int year = fix.dateTime.year;
+    //     if (year < 100) year += 2000; // Convert 2-digit to 4-digit (e.g., 23 → 2023)
+
+    //     // Set RTC (UTC time)
+    //     rtc.setTime(
+    //       fix.dateTime.seconds,  // sec
+    //       fix.dateTime.minutes,  // min
+    //       fix.dateTime.hours,    // hour
+    //       fix.dateTime.date,     // day
+    //       fix.dateTime.month,    // month
+    //       year                   // year (now 4-digit)
+    //     );
+    //     // rtc.setTime(fix.dateTime.seconds, fix.dateTime.minutes, fix.dateTime.hours, fix.dateTime.day, fix.dateTime.month, fix.dateTime.year);
+    //     int timezone_offset = 2; // Hours ahead of UTC
+    //     rtc.setTime(rtc.getEpoch() + (timezone_offset * 3600)); // Add seconds
+    //   }
+    // }
+
+    // if(fix.valid.time){
+    //   lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+    // }else{
+    //   lcd.setTextColor(TFT_RED, TFT_BLACK);
+    // }
+    // lcd.setCursor(5,15);
+    // lcd.setTextSize(1);
+    
+    // sprintf(tmp0, "%2d : %2d : %2d", fix.dateTime.hours, fix.dateTime.minutes, fix.dateTime.seconds);
+    // lcd.print(tmp0);
+    // lcd.print("   ");
+    // lcd.print(rtc.getTime("%Y-%m-%d %H:%M:%S"));
+
+    // if(fix.valid.satellites){
+    //   lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+    // }else{
+    //   lcd.setTextColor(TFT_RED, TFT_BLACK);
+    // }
+    // lcd.setCursor(5,30);
+    // sprintf(tmp0, "sats: %2d", fix.satellites);
+    // lcd.print(tmp0);
+
+    // fix_valid = fix.valid.location;
+    // if(fix.valid.location){
+    //   lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+    // }else{
+    //   lcd.setTextColor(TFT_RED, TFT_BLACK);
+    // }
+    // fix_lat = fix.location.latF();
+    // fix_lng = fix.location.lonF();
+    // lcd.setCursor(5,45);
+    // sprintf(tmp0, "location speed: %f lat: %f lng: %f",fix.speed_kph(), fix.location.latF(), fix.location.lonF());
+    // lcd.print(tmp0);
+
+  }
+
+
+
+
+  if(upload_request){
+    task_upload_data();
+  }
 
   if(millis() - tm_obdpull > obd_pull_time){
     tm_obdpull = millis();
@@ -445,6 +707,7 @@ void loop()
     if(DEMO_MODE){
       while(Serial.available()){
         char kjl = Serial.read();
+        // Serial.println(kjl);
         if(kjl == 'K'){
           rpmn = 2400;
           kmph = 140;
@@ -460,16 +723,7 @@ void loop()
         }else if(kjl == 'F'){
           get_filenames();
         }else if(kjl == 'H'){
-          task_upload_data(NULL);
-          // xTaskCreatePinnedToCore(
-          //     task_upload_data,      // Function that should be called
-          //     "Upload to DB",    // Name of the task (for debugging)
-          //     100000,               // Stack size (bytes)
-          //     NULL,               // Parameter to pass
-          //     1,                  // Task priority
-          //     NULL,               // Task handle
-          //     1        // Core you want to run the task on (0 or 1)
-          // );
+          upload_request = 1;
         }
 
         
@@ -608,7 +862,10 @@ void loop()
     }
     
     
-
+    // lcd.setCursor(5, 100);
+    // lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+    // sprintf(tmp0, "%4d RPM %3d KMh Engine %s %s", (uint16_t)rpmn, (uint16_t)kmph, engine_on?" on":"off", log_started?"Logging    ":"Not logging");
+    // lcd.print(tmp0);
 
     // DEBUG_SERIAL.printf("%f RPM %f kmh %f kms %f maf %f l/km %f l/s %f lt trip \r\n", rpmn, kmph, kms, maf, lpkm, consum_l_s, lts_trip);
   }
@@ -616,10 +873,15 @@ void loop()
   if(millis() - tm_log > log_time){
     tm_log = millis();
 
+    // lcd.setCursor(5, 200);
+    // lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+    // lcd.print(millis());
+
+
     if(engine_on && !log_started){
       trip_start();
-      delay(2000);
-      task_upload_data(NULL);
+      // delay(2000);
+      // task_upload_data(NULL);
     }else if(!engine_on && log_started){
       trip_end();
     }
@@ -661,19 +923,17 @@ Diesel: 14.6
 
 
 
-bool upload_progress=0;
 
 void processData(AsyncResult &aResult) {
-  if (!aResult.isResult())
-      if(!upload_progress && upload_progress != aResult.uploadProgress()){
-        upload_progress = aResult.uploadProgress();
-      }
-      if(upload_progress && upload_progress != aResult.uploadProgress()){
-        upload_progress = aResult.uploadProgress();
-        result_done = 1;
-      }
-      
-    return;
+
+  if(aResult.uploadProgress()){
+    int get_getprogress = aResult.uploadInfo().progress;
+    Serial.println(get_getprogress);
+    if(get_getprogress > 98){
+      upload_done = 1;
+      Serial.println("Upload done");
+    }
+  }
 
   if (aResult.isEvent())
     Firebase.printf("Event task: %s, msg: %s, code: %d\n", aResult.uid().c_str(), aResult.eventLog().message().c_str(), aResult.eventLog().code());

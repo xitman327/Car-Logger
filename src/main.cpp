@@ -23,6 +23,8 @@ bool firebase_initialized = false;
 
 float fix_lat, fix_lng;
 bool gps_location_valid = false;
+uint8_t last_sat_count = 0;
+time_t last_gps_fix_time = 0;
 
 void processData(AsyncResult &aResult);
 
@@ -125,6 +127,10 @@ float lts_trip = 0;
 
 bool log_started = 0;
 
+int num_of_files = 0;
+String dir_filenames_array[11];
+#define max_filenames 10
+
 void update_lpg_state(){
   if(!engine_on){
     engine_start_ms = 0;
@@ -177,6 +183,147 @@ void update_distance_from_speed() {
   }
   float hours = dt_ms / 3600000.0f;
   trip_distance_km += speed_kmph * hours;
+}
+
+
+String formatEpoch(time_t ts) {
+  if (ts <= 0) return "-";
+  struct tm tm_buf;
+  if (!localtime_r(&ts, &tm_buf)) return "-";
+  char buf[20]; // "YYYY-MM-DD HH:MM:SS" + null
+  if (strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &tm_buf) == 0) return "-";
+  return String(buf);
+}
+
+String formatEpochForFilename(time_t ts) {
+  if (ts <= 0) return "";
+  struct tm tm_buf;
+  if (!localtime_r(&ts, &tm_buf)) return "";
+  char buf[20]; // "YYYY-MM-DD_HH-MM-SS" + null
+  if (strftime(buf, sizeof(buf), "%Y-%m-%d_%H-%M-%S", &tm_buf) == 0) return "";
+  return String(buf);
+}
+
+String formatKilobytes(size_t bytes) {
+  float kb = bytes / 1024.0f;
+  char buf[16];
+  snprintf(buf, sizeof(buf), "%.2f", kb);
+  for (char *p = buf; *p; ++p) {
+    if (*p == '.') *p = ','; // use comma as decimal separator per request
+  }
+  return String(buf);
+}
+
+String protocolNameFromId(char id) {
+  switch (id) {
+    case AUTOMATIC: return "AUTO";
+    case SAE_J1850_PWM_41_KBAUD: return "SAE J1850 PWM 41k";
+    case SAE_J1850_PWM_10_KBAUD: return "SAE J1850 PWM 10k";
+    case ISO_9141_5_BAUD_INIT: return "ISO 9141-2";
+    case ISO_14230_5_BAUD_INIT: return "ISO 14230-4 (5 baud)";
+    case ISO_14230_FAST_INIT: return "ISO 14230-4 (fast)";
+    case ISO_15765_11_BIT_500_KBAUD: return "ISO 15765-4 (11/500)";
+    case ISO_15765_29_BIT_500_KBAUD: return "ISO 15765-4 (29/500)";
+    case ISO_15765_11_BIT_250_KBAUD: return "ISO 15765-4 (11/250)";
+    case ISO_15765_29_BIT_250_KBAUD: return "ISO 15765-4 (29/250)";
+    case SAE_J1939_29_BIT_250_KBAUD: return "SAE J1939 (29/250)";
+    case USER_1_CAN: return "USER1 CAN";
+    case USER_2_CAN: return "USER2 CAN";
+    default: return String(id);
+  }
+}
+
+String fetchCurrentProtocol() {
+  if (demo_mode) {
+    return "demo";
+  }
+
+  int8_t state = myELM327.sendCommand_Blocking(DISP_CURRENT_PROTOCOL_NUM);
+  if (state != ELM_SUCCESS) {
+    myELM327.printError();
+    return "unknown";
+  }
+
+  String resp = myELM327.payload ? String(myELM327.payload) : "";
+  resp.trim();
+  if (resp.startsWith("A") || resp.startsWith("a")) {
+    resp.remove(0, 1); // drop automatic marker
+  }
+  char proto_id = resp.length() > 0 ? resp.charAt(0) : '?';
+  String name = protocolNameFromId(proto_id);
+  if (!resp.isEmpty()) {
+    return name + " (" + resp + ")";
+  }
+  return name;
+}
+
+int wifi_signal_percent(){
+  if(!WiFi.isConnected()) return 0;
+  int32_t rssi = WiFi.RSSI();
+  if(rssi <= -100) return 0;
+  if(rssi >= -50) return 100;
+  return (rssi + 100) * 2;
+}
+
+const char* uploadStageName(UploadStage stage) {
+  switch (stage) {
+    case UploadIdle: return "Idle";
+    case UploadConnectWiFi: return "ConnectWiFi";
+    case UploadAuth: return "Auth";
+    case UploadSend: return "Send";
+    case UploadComplete: return "Complete";
+    default: return "Unknown";
+  }
+}
+
+void printDebugDashboard() {
+  String ip = WiFi.isConnected() ? WiFi.localIP().toString() : "0.0.0.0";
+  String now_str = formatEpoch(rtc.getEpoch());
+  String last_fix_str = formatEpoch(last_gps_fix_time);
+  size_t total_heap = ESP.getHeapSize();
+  size_t free_heap = ESP.getFreeHeap();
+  uint8_t used_pct = total_heap ? (uint8_t)(((total_heap - free_heap) * 100) / total_heap) : 0;
+  String free_heap_kb = formatKilobytes(free_heap);
+  String total_heap_kb = formatKilobytes(total_heap);
+
+  Serial.println();
+  Serial.println("===== DEBUG DASHBOARD =====");
+  Serial.printf("Time: %s\n", now_str.c_str());
+  Serial.printf("GPS : %s | sats:%u | last_fix:%s | speed:%.1f km/h\n",
+    gps_location_valid ? "FIX" : "NO-FIX",
+    last_sat_count,
+    last_fix_str.c_str(),
+    gps_speed_kmph);
+  Serial.printf("WiFi: %s | IP:%s | signal:%d%%\n",
+    WiFi.isConnected() ? "CONNECTED" : "OFFLINE",
+    ip.c_str(),
+    wifi_signal_percent());
+  Serial.printf("ELM : protocol: %s\n", fetchCurrentProtocol().c_str());
+  Serial.printf("Upload: stage:%s | in_progress:%d | current_idx:%d | files:%d\n",
+    uploadStageName(upload_stage),
+    upload_in_progress,
+    current_upload_file_index,
+    num_of_files);
+  Serial.printf("Log  : %s | trip_dist:%.2f km | points:%lu | start_ts:%ld\n",
+    log_started ? "ON " : "OFF",
+    trip_distance_km,
+    (unsigned long)trip_locations_count,
+    (long)(single_trip_data["start_timestamp"] | 0L));
+  Serial.printf("Car  : eng_on:%d rpm:%.0f kmph:%.1f gps_kmph:%.1f temp:%.1fC fuel:%.1f%% batt:%.2fV lpg:%d\n",
+    engine_on,
+    rpmn,
+    kmph,
+    gps_speed_kmph,
+    engine_temp,
+    fuel_level,
+    battery_voltage,
+    lpg_likely);
+  Serial.printf("RAM : %sKB free / %sKB total (%u%% used)\n",
+    free_heap_kb.c_str(),
+    total_heap_kb.c_str(),
+    used_pct);
+  Serial.println("===========================");
+  Serial.println();
 }
 
 void trip_start(){
@@ -235,7 +382,12 @@ void trip_end(){
   single_trip_data["trip_duration"] = (long) single_trip_data["end_timestamp"].as<long>() - single_trip_data["start_timestamp"].as<long>();
   Serial.printf("Trip ended %ld\n", single_trip_data["end_timestamp"].as<long>());
   if(FS_STARTED){
-    String filename = "/" + String(single_trip_data["start_timestamp"].as<long>()) + ".json";
+    time_t start_ts = single_trip_data["start_timestamp"].as<long>();
+    String filename_safe = formatEpochForFilename(start_ts);
+    if (filename_safe.isEmpty()) {
+      filename_safe = String(start_ts);
+    }
+    String filename = "/" + filename_safe + ".json";
     File file = SPIFFS.open(filename, "w", true);
     if(file){
       Serial.println();
@@ -250,9 +402,7 @@ void trip_end(){
   request_trip_upload();
 }
 
-int num_of_files = 0;
-String dir_filenames_array[11];
-#define max_filenames 10
+
 
 int get_filenames(){
 
@@ -407,6 +557,10 @@ void sync_rtc_from_gps_fix(const gps_fix &latest_fix) {
   if(gps_location_valid){
     fix_lat = latest_fix.latitude();
     fix_lng = latest_fix.longitude();
+    last_gps_fix_time = rtc.getEpoch();
+  }
+  if(latest_fix.valid.satellites){
+    last_sat_count = latest_fix.satellites;
   }
 }
 
@@ -655,10 +809,17 @@ HardwareSerial ELMSerial(1);
 
 HardwareSerial gpsSerial(2);
 
+// #include <BLEClientSerial.h>
+// BLEClientSerial BLESerial;
+// #define ELM_PORT   BLESerial
+
 void init_elm(){
   DEBUG_SERIAL.println("Attempting to connect to ELM327...");
-
-  if (!myELM327.begin(ELMSerial, false, 2000))
+  // ELM_PORT.begin("OBDII");
+  // if(!ELM_PORT.connect()){
+  //   return;
+  // }
+  if (!myELM327.begin(ELMSerial, true, 2000))
   {
     DEBUG_SERIAL.println("Couldn't connect to OBD scanner");
   }else{
@@ -668,21 +829,17 @@ void init_elm(){
 
 extern int num_of_files;
 
-const char* uploadStageName(UploadStage stage) {
-  switch (stage) {
-    case UploadIdle: return "Idle";
-    case UploadConnectWiFi: return "ConnectWiFi";
-    case UploadAuth: return "Auth";
-    case UploadSend: return "Send";
-    case UploadComplete: return "Complete";
-    default: return "Unknown";
-  }
-}
-
 void logDebugStatus() {
   String ip = WiFi.isConnected() ? WiFi.localIP().toString() : "0.0.0.0";
+  time_t now_epoch = rtc.getEpoch();
+  String last_fix_str = formatEpoch(last_gps_fix_time);
+  String now_str = formatEpoch(now_epoch);
+  size_t total_heap = ESP.getHeapSize();
+  size_t free_heap = ESP.getFreeHeap();
+  uint8_t used_pct = total_heap ? (uint8_t)(((total_heap - free_heap) * 100) / total_heap) : 0;
+  String free_heap_kb = formatKilobytes(free_heap);
   Serial.printf(
-    "DBG Status -> WiFi:%s IP:%s Firebase init:%d auth:%d ready:%d upload_stage:%s in_progress:%d current_idx:%d files:%d\n",
+    "DBG Status -> WiFi:%s IP:%s Firebase init:%d auth:%d ready:%d upload_stage:%s in_progress:%d current_idx:%d files:%d sats:%u last_fix:%s now:%s log:%d rpm:%.0f kmph:%.1f temp:%.1f fuel:%.1f batt:%.2fV lpg:%d RAM:%sKB %u%% used\r",
     WiFi.isConnected() ? "yes" : "no",
     ip.c_str(),
     firebase_initialized,
@@ -691,7 +848,19 @@ void logDebugStatus() {
     uploadStageName(upload_stage),
     upload_in_progress,
     current_upload_file_index,
-    num_of_files
+    num_of_files,
+    last_sat_count,
+    last_fix_str.c_str(),
+    now_str.c_str(),
+    log_started,
+    rpmn,
+    kmph,
+    engine_temp,
+    fuel_level,
+    battery_voltage,
+    lpg_likely,
+    free_heap_kb.c_str(),
+    used_pct
   );
 }
 
@@ -741,7 +910,7 @@ void handleDebugCommand(char key) {
       Serial.println("DBG: Firebase reinit requested (R)");
       break;
     case 'S':
-      logDebugStatus();
+      printDebugDashboard();
       break;
     case 'U':
       upload_stage = WiFi.isConnected() ? UploadAuth : UploadConnectWiFi;
@@ -761,14 +930,6 @@ void handleDebugCommand(char key) {
   }
 }
 
-int wifi_signal_percent(){
-  if(!WiFi.isConnected()) return 0;
-  int32_t rssi = WiFi.RSSI();
-  if(rssi <= -100) return 0;
-  if(rssi >= -50) return 100;
-  return (rssi + 100) * 2;
-}
-
 void setup()
 {
   pixels.begin();
@@ -785,7 +946,7 @@ void setup()
   WiFi.setAutoConnect(true);
   esp_log_level_set("*",ESP_LOG_INFO);
   Serial.begin(115200);
-  ELMSerial.begin(38400, SERIAL_8N1, 48, 47, false, 2000);
+  ELMSerial.begin(38400, SERIAL_8N1, 47, 48, false, 2000);
   gpsSerial.begin(9600, SERIAL_8N1, 38, 37);
 
   DEBUG_SERIAL.println("Starting");
@@ -887,18 +1048,15 @@ void loop()
     tm_obdpull = millis();
 
     if(!demo_mode){
-      if((myELM327.nb_rx_state == ELM_UNABLE_TO_CONNECT || myELM327.nb_rx_state == ELM_NO_DATA)){
-        init_elm();
-      }
-    }
 
-    if(demo_mode){
-      fuel_level = 20;
-    }else{
-      switch (obd_state)
-      {
+      if((myELM327.nb_rx_state >= ELM_UNABLE_TO_CONNECT)){
+        // init_elm();
+      }
+
+      switch (obd_state){
         case ENG_RPM:
         {
+          Serial.println("getting rpm");
           float resp = myELM327.rpm();
           
           if (myELM327.nb_rx_state == ELM_SUCCESS)
@@ -918,6 +1076,7 @@ void loop()
         
         case SPEED:
         {
+          Serial.println("getting speed");
           float resp = myELM327.kph();
           
           if (myELM327.nb_rx_state == ELM_SUCCESS)
@@ -936,6 +1095,7 @@ void loop()
 
         case MAF:
         {
+          Serial.println("getting maf");
           float resp = myELM327.mafRate();
           
           if (myELM327.nb_rx_state == ELM_SUCCESS)
@@ -954,6 +1114,7 @@ void loop()
 
         case FUEL_LEVEL:
         {
+          Serial.println("getting fuel");
           float resp = myELM327.fuelLevel();
           
           if (myELM327.nb_rx_state == ELM_SUCCESS)
@@ -971,6 +1132,7 @@ void loop()
         }
         case ENG_TEMP:
         {
+          Serial.println("getting etemp");
           float resp = myELM327.engineCoolantTemp();
           
           if (myELM327.nb_rx_state == ELM_SUCCESS)
@@ -988,6 +1150,7 @@ void loop()
         }
         case ENG_STRIM:
         {
+          Serial.println("getting strim");
           float resp = myELM327.shortTermFuelTrimBank_1();
           
           if (myELM327.nb_rx_state == ELM_SUCCESS)
@@ -1005,6 +1168,7 @@ void loop()
         }
         case ENG_LTRIM:
         {
+          Serial.println("getting ltrim");
           float resp = myELM327.longTermFuelTrimBank_1();
           
           if (myELM327.nb_rx_state == ELM_SUCCESS)
@@ -1022,6 +1186,7 @@ void loop()
         }
         case ENG_BATT:
         {
+          Serial.println("getting batt");
           float resp = myELM327.batteryVoltage();
           
           if (myELM327.nb_rx_state == ELM_SUCCESS)
@@ -1096,18 +1261,7 @@ void loop()
   
   if(millis() - tm_debug_report > debug_report_time){
     tm_debug_report = millis();
-    Serial.printf("DBG Telemetry -> eng_on:%d rpm:%.0f kmph:%.1f gps_kmph:%.1f gps_fix:%d batt:%.2fV lpg:eligible:%d likely:%d wifi:%d wifi_sig:%d%% app_ready:%d\n",
-      engine_on,
-      rpmn,
-      kmph,
-      gps_speed_kmph,
-      gps_location_valid,
-      battery_voltage,
-      lpg_eligible,
-      lpg_likely,
-      WiFi.isConnected(),
-      wifi_signal_percent(),
-      app.ready());
+    printDebugDashboard();
   }
 }
 

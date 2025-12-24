@@ -8,6 +8,8 @@
 #include "ArduinoJson.h"
 #include <time.h>
 
+#include "ble.h"
+
 bool FS_STARTED = 0;
 
 #define ENABLE_USER_CONFIG
@@ -46,9 +48,7 @@ const char* ntpServer = "pool.ntp.org";
 void upload_trip();
 void request_trip_upload();
 
-#include "ELMduino.h"
 
-#define ELM_PORT Serial1
 
 #include <NMEAGPS.h>
 NMEAGPS  gps;
@@ -84,14 +84,11 @@ bool upload_done_flag = false;
 uint32_t upload_started_at = 0;
 const uint32_t upload_timeout_ms = 30000;
 
-ELM327 myELM327;
-float strim, ltrim;
-float engine_temp;
-float consum_l_s, kms, lpkm, gfps, lbsps, rpmn, kmph, maf, fuel_level;
+#include "obd.h"
+
 float lpkm_max, rpmn_max, kmph_max;
 bool engine_on;
 bool engine_on_prev = false;
-float battery_voltage = 0.0f;
 
 bool lpg_eligible = false;
 bool lpg_likely = false;
@@ -99,17 +96,6 @@ uint32_t engine_start_ms = 0;
 const float lpg_min_coolant_c = 40.0f;
 const uint32_t lpg_min_run_ms = 20000;
 const float lpg_rpm_threshold = 3000.0f;
-
-typedef enum { ENG_RPM,
-               SPEED ,
-               MAF,
-               FUEL_LEVEL,
-               ENG_TEMP,
-               ENG_STRIM,
-               ENG_LTRIM,
-               ENG_BATT
-              } obd_pid_states;
-obd_pid_states obd_state = ENG_RPM;
 
 float trip_distance_km = 0;
 
@@ -214,49 +200,6 @@ String formatKilobytes(size_t bytes) {
   return String(buf);
 }
 
-String protocolNameFromId(char id) {
-  switch (id) {
-    case AUTOMATIC: return "AUTO";
-    case SAE_J1850_PWM_41_KBAUD: return "SAE J1850 PWM 41k";
-    case SAE_J1850_PWM_10_KBAUD: return "SAE J1850 PWM 10k";
-    case ISO_9141_5_BAUD_INIT: return "ISO 9141-2";
-    case ISO_14230_5_BAUD_INIT: return "ISO 14230-4 (5 baud)";
-    case ISO_14230_FAST_INIT: return "ISO 14230-4 (fast)";
-    case ISO_15765_11_BIT_500_KBAUD: return "ISO 15765-4 (11/500)";
-    case ISO_15765_29_BIT_500_KBAUD: return "ISO 15765-4 (29/500)";
-    case ISO_15765_11_BIT_250_KBAUD: return "ISO 15765-4 (11/250)";
-    case ISO_15765_29_BIT_250_KBAUD: return "ISO 15765-4 (29/250)";
-    case SAE_J1939_29_BIT_250_KBAUD: return "SAE J1939 (29/250)";
-    case USER_1_CAN: return "USER1 CAN";
-    case USER_2_CAN: return "USER2 CAN";
-    default: return String(id);
-  }
-}
-
-String fetchCurrentProtocol() {
-  if (demo_mode) {
-    return "demo";
-  }
-
-  int8_t state = myELM327.sendCommand_Blocking(DISP_CURRENT_PROTOCOL_NUM);
-  if (state != ELM_SUCCESS) {
-    myELM327.printError();
-    return "unknown";
-  }
-
-  String resp = myELM327.payload ? String(myELM327.payload) : "";
-  resp.trim();
-  if (resp.startsWith("A") || resp.startsWith("a")) {
-    resp.remove(0, 1); // drop automatic marker
-  }
-  char proto_id = resp.length() > 0 ? resp.charAt(0) : '?';
-  String name = protocolNameFromId(proto_id);
-  if (!resp.isEmpty()) {
-    return name + " (" + resp + ")";
-  }
-  return name;
-}
-
 int wifi_signal_percent(){
   if(!WiFi.isConnected()) return 0;
   int32_t rssi = WiFi.RSSI();
@@ -298,7 +241,7 @@ void printDebugDashboard() {
     WiFi.isConnected() ? "CONNECTED" : "OFFLINE",
     ip.c_str(),
     wifi_signal_percent());
-  Serial.printf("ELM : protocol: %s\n", fetchCurrentProtocol().c_str());
+  Serial.printf("OBD : protocol: %s\n", ELMprotocol.c_str());
   Serial.printf("Upload: stage:%s | in_progress:%d | current_idx:%d | files:%d\n",
     uploadStageName(upload_stage),
     upload_in_progress,
@@ -326,35 +269,102 @@ void printDebugDashboard() {
   Serial.println();
 }
 
-void trip_start(){
-  log_started = 1;
-  single_trip_data.clear();
-  current_consumption_l = 0;
-  lpkm = 0;
-  kmph_max = 0;
-  lpkm_max = 0;
-  trip_distance_km = 0;
-  lts_trip = 0;
-  tm_t_consum = millis();
-  trip_locations_count = 0;
-  time_corrected_this_trip = false;
-  last_distance_update_ms = millis();
-  single_trip_data["start_timestamp"] =  rtc.getEpoch();
-  single_trip_data["trip_locations_count"] = trip_locations_count;
-  single_trip_data["trip_locations"][trip_locations_count]["time"] = rtc.getEpoch();
-  set_location(single_trip_data["trip_locations"][trip_locations_count]);
-  float speed_to_log = get_effective_speed_kmph();
-  single_trip_data["trip_locations"][trip_locations_count]["speed"] = speed_to_log;
-  single_trip_data["trip_locations"][trip_locations_count]["lpg"] = lpg_likely;
-  single_trip_data["trip_locations"][trip_locations_count]["rpm"] = rpmn;
-  single_trip_data["trip_locations"][trip_locations_count]["engine_temp"] = engine_temp;
-  single_trip_data["trip_locations"][trip_locations_count]["lpkm"] = lpkm;
 
-  Serial.printf("Trip started %ld\n", single_trip_data["start_timestamp"].as<long>());
+#define CHUNK_SIZE 200
+
+// int trip_locations_count = 0;
+int chunkIndex = 0;
+String tripBaseName;     // formatted datetime used as filename root
+// bool log_started = false;
+
+void trip_start() {
+  log_started = true;
+  trip_locations_count = 0;
+  chunkIndex = 0;
+  single_trip_data.clear();
+
+  time_t now = rtc.getEpoch();
+  tripBaseName = formatEpochForFilename(now);
+  if (tripBaseName.isEmpty()) {
+    tripBaseName = String(now);
+  }
+
+  single_trip_data["start_timestamp"] = now;
+  single_trip_data["trip_locations_count"] = trip_locations_count;
+
+  // FIXED: Use createNestedObject() instead of direct indexing
+  JsonObject location = single_trip_data["trip_locations"].createNestedObject();
+  location["time"] = now;
+  set_location(location);
+  float speed_to_log = get_effective_speed_kmph();
+  location["speed"] = speed_to_log;
+  location["lpg"] = lpg_likely;
+  location["rpm"] = rpmn;
+  location["engine_temp"] = engine_temp;
+  location["lpkm"] = lpkm;
+
+  Serial.printf("Trip started %s\n", tripBaseName.c_str());
 }
 
-void populate_current_json(){
 
+// void split_chunk() {
+//   if (single_trip_data.size() == 0) return;
+
+//   char fname[40];
+//   snprintf(fname, sizeof(fname), "/%s_%03d.json",
+//            tripBaseName.c_str(), chunkIndex);
+
+//   File f = SPIFFS.open(fname, FILE_WRITE);
+//   if (!f) {
+//     Serial.println("❌ Failed to save chunk");
+//     return;
+//   }
+
+//   uint32_t wrote = serializeJson(single_trip_data, f);
+//   f.close();
+
+//   Serial.printf("💾 Chunk saved %s (%u bytes) — total count=%d\n",
+//                 fname, wrote, trip_locations_count);
+
+//   single_trip_data["trip_locations"].clear();  // free RAM
+//   chunkIndex++;
+// }
+
+void split_chunk() {
+  if (single_trip_data.size() == 0) return;
+
+  char fname[40];
+  snprintf(fname, sizeof(fname), "/%s_%03d.json",
+           tripBaseName.c_str(), chunkIndex);
+
+  File f = SPIFFS.open(fname, FILE_WRITE);
+  if (!f) {
+    Serial.println("❌ Failed to save chunk");
+    return;
+  }
+
+  // Add end timestamp for this chunk
+  single_trip_data["end_timestamp"] = rtc.getEpoch();
+  
+  uint32_t wrote = serializeJson(single_trip_data, f);
+  f.close();
+
+  Serial.printf("💾 Chunk saved %s (%u bytes) — total count=%d\n",
+                fname, wrote, trip_locations_count);
+
+  // Clear and prepare for next chunk
+  single_trip_data.clear();
+  
+  // Start new chunk with current stats
+  single_trip_data["start_timestamp"] = rtc.getEpoch();
+  single_trip_data["trip_locations_count"] = 0;  // Reset for this chunk
+  
+  chunkIndex++;
+}
+
+
+void populate_current_json() {
+  if (!log_started) return;
 
   kmph_max = max(kmph_max, kmph);
   single_trip_data["top_speed"] = kmph_max;
@@ -364,44 +374,55 @@ void populate_current_json(){
 
   single_trip_data["trip_distance"] = trip_distance_km;
 
-  single_trip_data["trip_locations_count"] = ++trip_locations_count;
-  single_trip_data["trip_locations"][trip_locations_count]["time"] = rtc.getEpoch();
-  set_location(single_trip_data["trip_locations"][trip_locations_count]);
+  // FIXED: Use createNestedObject() here too
+  JsonObject location = single_trip_data["trip_locations"].createNestedObject();
+  location["time"] = rtc.getEpoch();
+  set_location(location);
   float speed_to_log = get_effective_speed_kmph();
-  single_trip_data["trip_locations"][trip_locations_count]["speed"] = speed_to_log;
-  single_trip_data["trip_locations"][trip_locations_count]["lpg"] = lpg_likely;
-  single_trip_data["trip_locations"][trip_locations_count]["rpm"] = rpmn;
-  single_trip_data["trip_locations"][trip_locations_count]["engine_temp"] = engine_temp;
-  single_trip_data["trip_locations"][trip_locations_count]["lpkm"] = lpkm;
-  
-}
+  location["speed"] = speed_to_log;
+  location["lpg"] = lpg_likely;
+  location["rpm"] = rpmn;
+  location["engine_temp"] = engine_temp;
+  location["lpkm"] = lpkm;
 
-void trip_end(){
-  log_started = 0;
-  single_trip_data["end_timestamp"] = rtc.getEpoch();
-  single_trip_data["trip_duration"] = (long) single_trip_data["end_timestamp"].as<long>() - single_trip_data["start_timestamp"].as<long>();
-  Serial.printf("Trip ended %ld\n", single_trip_data["end_timestamp"].as<long>());
-  if(FS_STARTED){
-    time_t start_ts = single_trip_data["start_timestamp"].as<long>();
-    String filename_safe = formatEpochForFilename(start_ts);
-    if (filename_safe.isEmpty()) {
-      filename_safe = String(start_ts);
-    }
-    String filename = "/" + filename_safe + ".json";
-    File file = SPIFFS.open(filename, "w", true);
-    if(file){
-      Serial.println();
-      Serial.printf("%s %d data serialized \n", file.name(), (uint32_t)serializeJson(single_trip_data, file));
-    }else{
-      Serial.println("file error");
-    }
-    file.close();
-  }else{
-    Serial.println("FS not started");
+  trip_locations_count++;
+  single_trip_data["trip_locations_count"] = trip_locations_count;
+
+  // split every CHUNK_SIZE locations
+  if (trip_locations_count % CHUNK_SIZE == 0) {
+    split_chunk();
   }
-  request_trip_upload();
 }
 
+
+void trip_end() {
+  if (!log_started) return;
+  log_started = false;
+
+  // Save leftover unsplit locations
+  // if (single_trip_data["trip_locations"].size() > 0) {
+  //   split_chunk();
+  // }
+  char fname[40];
+  snprintf(fname, sizeof(fname), "/%s_%03d.json",
+           tripBaseName.c_str(), chunkIndex);
+  // Create final file WITHOUT suffix (last <1000 entries)
+  // String fname = "/" + tripBaseName + ".json";
+  File f = SPIFFS.open(fname, FILE_WRITE);
+  if (!f) {
+    Serial.println("❌ Failed to save final trip file");
+    return;
+  }
+
+  uint32_t wrote = serializeJson(single_trip_data, f);
+  f.close();
+
+  Serial.printf("🏁 Final file saved %s (%u bytes), total locations=%d\n",
+                fname, wrote, trip_locations_count);
+
+  single_trip_data.clear();  // free RAM
+  Serial.println("🧹 JSON cleared from RAM");
+}
 
 
 int get_filenames(){
@@ -429,7 +450,9 @@ int get_filenames(){
         continue;
       }
       Serial.print("FILE: ");
-      Serial.println(name);
+      Serial.print(name);
+      Serial.print("  ");
+      Serial.println(file.size());
       dir_filenames_array[num_of_files] = name.startsWith("/") ? name : "/" + name;
       num_of_files++;
       file = root.openNextFile();
@@ -492,17 +515,50 @@ bool start_file_upload(int index){
     return false;
   }
 
+  
+
+  // Serial.println(trip_data);
+
   uid = app.getUid().c_str();
   databasePath = "/UsersData/" + uid + "/trips/";
+
   String sanitized_name = filename;
-  if(sanitized_name.startsWith("/")){
-    sanitized_name.remove(0,1);
+
+  // remove leading slash
+  if (sanitized_name.startsWith("/")) {
+    sanitized_name.remove(0, 1);
   }
-  if(sanitized_name.length() > 5){
+
+  // remove .json extension
+  if (sanitized_name.endsWith(".json")) {
     sanitized_name.remove(sanitized_name.length() - 5);
-  }else{
-    sanitized_name = "trip";
   }
+
+  // remove chunk suffix `_000`, `_001`, `_002` ...
+  int underscore_index = sanitized_name.lastIndexOf('_');
+  if (underscore_index != -1) {
+    // check if suffix is exactly 3 digits
+    if (underscore_index + 4 == sanitized_name.length()) {
+      if (isDigit(sanitized_name[underscore_index + 1]) &&
+          isDigit(sanitized_name[underscore_index + 2]) &&
+          isDigit(sanitized_name[underscore_index + 3])) {
+        sanitized_name.remove(underscore_index);   // remove suffix
+      }
+    }
+  }
+
+
+  // String sanitized_name = filename;
+  // if(sanitized_name.startsWith("/")){
+  //   sanitized_name.remove(0,1);
+  // }
+  // if(sanitized_name.length() > 5){
+  //   sanitized_name.remove(sanitized_name.length() - 5);
+  // }else{
+  //   sanitized_name = "trip";
+  // }
+
+
   parentPath = databasePath + sanitized_name;
 
   upload_done_flag = 0;
@@ -512,7 +568,7 @@ bool start_file_upload(int index){
   active_upload_file_index = index;
   db_retry_count = 0;
 
-  Database.set<object_t>(aClient, parentPath, object_t(trip_data), processData, "TRIP_DB_Send_Data");
+  Database.update<object_t>(aClient, parentPath, object_t(trip_data), processData, "TRIP_DB_Send_Data");
 
   return true;
 }
@@ -672,7 +728,7 @@ void task_upload_data(){
       }
       if(current_upload_file_index < 0){
         get_filenames();
-        current_upload_file_index = num_of_files - 1;
+        current_upload_file_index = 0;
       }
       upload_stage = UploadSend;
     break;
@@ -704,7 +760,7 @@ void task_upload_data(){
           if(db_retry_count >= db_max_retries){
             Serial.println("Upload failed, retry limit reached, skipping file");
             db_retry_count = 0;
-            current_upload_file_index--;
+            current_upload_file_index++;
           }else{
             Serial.printf("Upload failed, retrying file (attempt %d/%d)\n", db_retry_count, db_max_retries);
           }
@@ -719,14 +775,14 @@ void task_upload_data(){
             }
           }
           db_retry_count = 0;
-          current_upload_file_index--;
+          current_upload_file_index++;
         }
         upload_done_flag = false;
         upload_error = false;
         active_upload_file_index = -1;
       }
       
-      if(current_upload_file_index < 0){
+      if(current_upload_file_index >= num_of_files){
         upload_stage = UploadComplete;
         break;
       }
@@ -805,27 +861,9 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
 
 #define light_sensor 13
 
-HardwareSerial ELMSerial(1);
 
 HardwareSerial gpsSerial(2);
 
-// #include <BLEClientSerial.h>
-// BLEClientSerial BLESerial;
-// #define ELM_PORT   BLESerial
-
-void init_elm(){
-  DEBUG_SERIAL.println("Attempting to connect to ELM327...");
-  // ELM_PORT.begin("OBDII");
-  // if(!ELM_PORT.connect()){
-  //   return;
-  // }
-  if (!myELM327.begin(ELMSerial, true, 2000))
-  {
-    DEBUG_SERIAL.println("Couldn't connect to OBD scanner");
-  }else{
-    DEBUG_SERIAL.println("Connected to ELM327");
-  }
-}
 
 extern int num_of_files;
 
@@ -929,7 +967,7 @@ void handleDebugCommand(char key) {
       break;
   }
 }
-
+#include "lcd.h"
 void setup()
 {
   pixels.begin();
@@ -946,10 +984,12 @@ void setup()
   WiFi.setAutoConnect(true);
   esp_log_level_set("*",ESP_LOG_INFO);
   Serial.begin(115200);
-  ELMSerial.begin(38400, SERIAL_8N1, 47, 48, false, 2000);
+  
   gpsSerial.begin(9600, SERIAL_8N1, 38, 37);
 
   DEBUG_SERIAL.println("Starting");
+
+  setup_lcd();
 
   if(SPIFFS.begin(true)){
     Serial.println("FS STARTED");
@@ -971,11 +1011,8 @@ void setup()
     }
   }
   
-
-  if(!demo_mode){
-    init_elm();
-  }
-
+  ble_setup();
+  setup_elm();
   ensureFirebaseReady();
 
 
@@ -993,7 +1030,8 @@ float pressure;
 
 static uint8_t hue = 0;
 
-#define log_time 1000
+#define log_time 50 //1000 or 2000
+
 #define led_time 20
 #define debug_report_time 2000
 uint32_t tm_log, tm_led;
@@ -1044,166 +1082,9 @@ void loop()
     task_upload_data();
   }
 
-  if(millis() - tm_obdpull > obd_pull_time){
-    tm_obdpull = millis();
-
-    if(!demo_mode){
-
-      if((myELM327.nb_rx_state >= ELM_UNABLE_TO_CONNECT)){
-        // init_elm();
-      }
-
-      switch (obd_state){
-        case ENG_RPM:
-        {
-          Serial.println("getting rpm");
-          float resp = myELM327.rpm();
-          
-          if (myELM327.nb_rx_state == ELM_SUCCESS)
-          {
-            rpmn = resp;
-            obd_state = SPEED;
-          }
-          else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
-          {
-            rpmn = 0;
-            myELM327.printError();
-            obd_state = SPEED;
-          }
-          
-          break;
-        }
-        
-        case SPEED:
-        {
-          Serial.println("getting speed");
-          float resp = myELM327.kph();
-          
-          if (myELM327.nb_rx_state == ELM_SUCCESS)
-          {
-            kmph = resp;
-            obd_state = MAF;
-          }
-          else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
-          {
-            myELM327.printError();
-            obd_state = MAF;
-          }
-          
-          break;
-        }
-
-        case MAF:
-        {
-          Serial.println("getting maf");
-          float resp = myELM327.mafRate();
-          
-          if (myELM327.nb_rx_state == ELM_SUCCESS)
-          {
-            maf = resp;
-            obd_state = FUEL_LEVEL;
-          }
-          else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
-          {
-            myELM327.printError();
-            obd_state = FUEL_LEVEL;
-          }
-          
-          break;
-        }
-
-        case FUEL_LEVEL:
-        {
-          Serial.println("getting fuel");
-          float resp = myELM327.fuelLevel();
-          
-          if (myELM327.nb_rx_state == ELM_SUCCESS)
-          {
-            fuel_level = resp;
-            obd_state = ENG_TEMP;
-          }
-          else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
-          {
-            myELM327.printError();
-            obd_state = ENG_TEMP;
-          }
-          
-          break;
-        }
-        case ENG_TEMP:
-        {
-          Serial.println("getting etemp");
-          float resp = myELM327.engineCoolantTemp();
-          
-          if (myELM327.nb_rx_state == ELM_SUCCESS)
-          {
-            engine_temp = resp;
-            obd_state = ENG_STRIM;
-          }
-          else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
-          {
-            myELM327.printError();
-            obd_state = ENG_STRIM;
-          }
-          
-          break;
-        }
-        case ENG_STRIM:
-        {
-          Serial.println("getting strim");
-          float resp = myELM327.shortTermFuelTrimBank_1();
-          
-          if (myELM327.nb_rx_state == ELM_SUCCESS)
-          {
-            strim = resp;
-            obd_state = ENG_LTRIM;
-          }
-          else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
-          {
-            myELM327.printError();
-            obd_state = ENG_LTRIM;
-          }
-          
-          break;
-        }
-        case ENG_LTRIM:
-        {
-          Serial.println("getting ltrim");
-          float resp = myELM327.longTermFuelTrimBank_1();
-          
-          if (myELM327.nb_rx_state == ELM_SUCCESS)
-          {
-            ltrim = resp;
-            obd_state = ENG_BATT;
-          }
-          else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
-          {
-            myELM327.printError();
-            obd_state = ENG_BATT;
-          }
-          
-          break;
-        }
-        case ENG_BATT:
-        {
-          Serial.println("getting batt");
-          float resp = myELM327.batteryVoltage();
-          
-          if (myELM327.nb_rx_state == ELM_SUCCESS)
-          {
-            battery_voltage = resp;
-          }
-          else if (myELM327.nb_rx_state != ELM_GETTING_MSG)
-          {
-            myELM327.printError();
-          }
-          obd_state = ENG_RPM;
-          
-          break;
-        }
-      }
-    }
-  }
+  loop_lcd();
+  loop_elm();
+  ble_loop();
 
   if(millis() - tm_convertion > convertion_time){
     tm_convertion = millis();
@@ -1226,7 +1107,7 @@ void loop()
     }
     update_lpg_state();
 
-    if(kmph < (float)0.5){
+    if(kmph > (float)1.0){
       kms = kmph * (1.0/3600.0);
       lpkm = (float)(3600.0*maf)/(9069.90*kms);
     }else{

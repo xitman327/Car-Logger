@@ -1,5 +1,8 @@
 {
     "files.associations": {
-        "new": "cpp"
+        "new": "cpp",
+        "dport_access.h": "c",
+        "system_reg.h": "c",
+        "gpio_pins.h": "c"
     }
 }

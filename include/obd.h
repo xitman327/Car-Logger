@@ -10,6 +10,10 @@
 
 ELM327 myELM327;
 
+float lpkm_max, rpmn_max, kmph_max;
+bool engine_on;
+bool engine_on_prev = false;
+
 float engine_temp;
 float consum_l_s, kms, lpkm, gfps, lbsps, rpmn, kmph, maf, fuel_level;
 float throttle_pos = 0.0f;
@@ -19,6 +23,28 @@ float battery_voltage = 0.0f;
 bool can_ready = false, can_connected = false;
 bool elm_ready = false, elm_connected = false;
 int obd_use = 1;
+
+void update_lpg_state(){
+  if(!engine_on){
+    engine_start_ms = 0;
+    lpg_eligible = false;
+    lpg_likely = false;
+    return;
+  }
+  if(engine_start_ms == 0){
+    engine_start_ms = millis();
+  }
+  if(!lpg_eligible){
+    if(engine_temp > lpg_min_coolant_c && millis() - engine_start_ms >= lpg_min_run_ms){
+      lpg_eligible = true;
+    }
+  }
+  if(lpg_eligible && rpmn > lpg_rpm_threshold){
+    lpg_likely = true;
+  }else if(rpmn < (lpg_rpm_threshold * 0.8f)){
+    lpg_likely = false;
+  }
+}
 
 String statusToString(int id){
     switch(id){

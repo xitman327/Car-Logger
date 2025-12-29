@@ -164,7 +164,7 @@ float pressure;
 
 static uint8_t hue = 0;
 
-#define log_time 50 //1000 or 2000
+#define log_time 2000 //1000 or 2000
 
 #define led_time 20
 #define debug_report_time 2000

@@ -1,5 +1,6 @@
 #define DEFAULT_DEMO_MODE 0
 #define DEBUG_SERIAL Serial
+#include "constants.h"
 #include "SPIFFS.h"
 #include "user.h"
 #include "WiFi.h"
@@ -75,7 +76,7 @@ bool gps_speed_valid = false;
 
 float current_consumption_l = 0;
 
-uint32_t tm_convertion = 0, tm_obdpull = 0, tm_t_consum = 0;
+
 float lts_trip = 0;
 
 bool log_started = 0;
@@ -91,7 +92,7 @@ HardwareSerial gpsSerial(2);
 extern int num_of_files;
 
 
-
+#include "sensors.h"
 #include "obd.h"
 #include "ble.h"
 #include "trip.h"
@@ -99,11 +100,14 @@ extern int num_of_files;
 #include "lcd.h"
 #include "debug.h"
 #include "extra_functions.h"
+#include "settings.h"
 
 
 
 void setup()
 {
+
+  load_settings();
   pixels.begin();
   pixels.clear();
   pixels.setBrightness(10);
@@ -114,7 +118,7 @@ void setup()
 
   WiFi.onEvent(WiFiEvent);
   WiFi.mode(WIFI_MODE_STA);
-  WiFi.setAutoReconnect(true);
+  WiFi.setAutoReconnect(false);
   WiFi.setAutoConnect(true);
   esp_log_level_set("*",ESP_LOG_INFO);
   Serial.begin(115200);
@@ -124,6 +128,7 @@ void setup()
   DEBUG_SERIAL.println("Starting");
 
   setup_lcd();
+  sensors_setup();
 
   if(SPIFFS.begin(true)){
     Serial.println("FS STARTED");
@@ -155,12 +160,8 @@ void setup()
 #define afr_gassoline 14.7
 #define dens_gassoline 710.0
 
-#define convertion_time 1000
-#define obd_pull_time 200
 
-float temperature;
-float humidity;
-float pressure;
+#define obd_pull_time 200
 
 static uint8_t hue = 0;
 
@@ -219,44 +220,9 @@ void loop()
   loop_lcd();
   loop_elm();
   ble_loop();
+  sensors_loop();
 
-  if(millis() - tm_convertion > convertion_time){
-    tm_convertion = millis();
-    update_distance_from_speed();
-
-    if(rpmn > 500){
-      engine_on = 1;
-    }else{
-      engine_on = 0;
-    }
-    if(engine_on != engine_on_prev){
-      engine_on_prev = engine_on;
-      if(!engine_on){
-        lpg_eligible = false;
-        lpg_likely = false;
-        engine_start_ms = 0;
-      }else{
-        engine_start_ms = millis();
-      }
-    }
-    update_lpg_state();
-
-    if(kmph > (float)1.0){
-      kms = kmph * (1.0/3600.0);
-      lpkm = (float)(3600.0*maf)/(9069.90*kms);
-    }else{
-      lpkm = 0;
-    }
-
-    if(engine_on){
-      consum_l_s = maf / 14.7;
-      float lt_dts = (consum_l_s / 1000.0) * (millis() - tm_t_consum);
-      tm_t_consum = millis();
-      current_consumption_l = lt_dts;
-      lts_trip += lt_dts;
-    }
-
-  }
+  
 
   if(millis() - tm_log > log_time){
     tm_log = millis();

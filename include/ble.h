@@ -31,146 +31,200 @@ extern int wifi_signal_percent();
 
 enum UploadStage : uint8_t;
 extern UploadStage upload_stage;
-extern const char* uploadStageName(UploadStage stage);
+extern const char *uploadStageName(UploadStage stage);
 
-namespace {
-  NimBLEServer* pServer = nullptr;
+namespace
+{
+  NimBLEServer *pServer = nullptr;
 
-  NimBLECharacteristic* chrTime = nullptr;
-  NimBLECharacteristic* chrGpsFix = nullptr;
-  NimBLECharacteristic* chrGpsSats = nullptr;
-  NimBLECharacteristic* chrGpsSpeed = nullptr;
-  NimBLECharacteristic* chrGpsPos = nullptr;
-  NimBLECharacteristic* chrWifiStatus = nullptr;
-  NimBLECharacteristic* chrWifiIp = nullptr;
-  NimBLECharacteristic* chrWifiSignal = nullptr;
-  NimBLECharacteristic* chrObdProtocol = nullptr;
-  NimBLECharacteristic* chrUploadStage = nullptr;
-  NimBLECharacteristic* chrUploadInProgress = nullptr;
-  NimBLECharacteristic* chrUploadCurrentIdx = nullptr;
-  NimBLECharacteristic* chrUploadFiles = nullptr;
-  NimBLECharacteristic* chrLogStatus = nullptr;
-  NimBLECharacteristic* chrTripDistance = nullptr;
-  NimBLECharacteristic* chrTripPoints = nullptr;
-  NimBLECharacteristic* chrTripStartTs = nullptr;
-  NimBLECharacteristic* chrCarEngOn = nullptr;
-  NimBLECharacteristic* chrCarRpm = nullptr;
-  NimBLECharacteristic* chrCarKmph = nullptr;
-  NimBLECharacteristic* chrCarGpsKmph = nullptr;
-  NimBLECharacteristic* chrCarTemp = nullptr;
-  NimBLECharacteristic* chrCarFuel = nullptr;
-  NimBLECharacteristic* chrCarBatt = nullptr;
-  NimBLECharacteristic* chrCarLpg = nullptr;
-  NimBLECharacteristic* chrRamFreeKb = nullptr;
-  NimBLECharacteristic* chrRamTotalKb = nullptr;
-  NimBLECharacteristic* chrRamUsedPct = nullptr;
-//   NimBLECharacteristic* chrLegacyLed = nullptr;  // backward-compat with tutorial example
+  NimBLECharacteristic *chrTime = nullptr;
+  NimBLECharacteristic *chrGpsFix = nullptr;
+  NimBLECharacteristic *chrGpsSats = nullptr;
+  NimBLECharacteristic *chrGpsSpeed = nullptr;
+  NimBLECharacteristic *chrGpsPos = nullptr;
+  NimBLECharacteristic *chrWifiStatus = nullptr;
+  NimBLECharacteristic *chrWifiIp = nullptr;
+  NimBLECharacteristic *chrWifiSignal = nullptr;
+  NimBLECharacteristic *chrObdProtocol = nullptr;
+  NimBLECharacteristic *chrUploadStage = nullptr;
+  NimBLECharacteristic *chrUploadInProgress = nullptr;
+  NimBLECharacteristic *chrUploadCurrentIdx = nullptr;
+  NimBLECharacteristic *chrUploadFiles = nullptr;
+  NimBLECharacteristic *chrLogStatus = nullptr;
+  NimBLECharacteristic *chrTripDistance = nullptr;
+  NimBLECharacteristic *chrTripPoints = nullptr;
+  NimBLECharacteristic *chrTripStartTs = nullptr;
+  NimBLECharacteristic *chrCarEngOn = nullptr;
+  NimBLECharacteristic *chrCarRpm = nullptr;
+  NimBLECharacteristic *chrCarKmph = nullptr;
+  NimBLECharacteristic *chrCarGpsKmph = nullptr;
+  NimBLECharacteristic *chrCarTemp = nullptr;
+  NimBLECharacteristic *chrCarFuel = nullptr;
+  NimBLECharacteristic *chrCarBatt = nullptr;
+  NimBLECharacteristic *chrCarLpg = nullptr;
+  NimBLECharacteristic *chrRamFreeKb = nullptr;
+  NimBLECharacteristic *chrRamTotalKb = nullptr;
+  NimBLECharacteristic *chrRamUsedPct = nullptr;
+  NimBLECharacteristic *pid_rq_list_a = nullptr;
+  NimBLECharacteristic *pid_rq_list_b = nullptr;
+  //   NimBLECharacteristic* chrLegacyLed = nullptr;  // backward-compat with tutorial example
 
   bool deviceConnected = false;
   bool oldDeviceConnected = false;
   uint32_t lastBleUpdateMs = 0;
   constexpr uint32_t kBleUpdateIntervalMs = 200;
 
-  NimBLECharacteristic* createReadCharacteristic(NimBLEService* service, const char* uuid) {
-    auto* chr = service->createCharacteristic(
-      uuid,
-      NIMBLE_PROPERTY::READ
-    );
+  NimBLECharacteristic *createReadCharacteristic(NimBLEService *service, const char *uuid)
+  {
+    auto *chr = service->createCharacteristic(
+        uuid,
+        NIMBLE_PROPERTY::READ);
     return chr;
   }
 
-  NimBLECharacteristic* createReadWriteCharacteristic(NimBLEService* service, const char* uuid) {
-    auto* chr = service->createCharacteristic(
-      uuid,
-      NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE
-    );
+  NimBLECharacteristic *createReadWriteCharacteristic(NimBLEService *service, const char *uuid)
+  {
+    auto *chr = service->createCharacteristic(
+        uuid,
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE);
+    return chr;
+  }
+  NimBLECharacteristic *createReadWriteNotifyCharacteristic(NimBLEService *service, const char *uuid)
+  {
+    auto *chr = service->createCharacteristic(
+        uuid,
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::NOTIFY);
     return chr;
   }
 
-  void setValue(NimBLECharacteristic* chr, const String& value) {
-    if (!chr) return;
+  void setValue(NimBLECharacteristic *chr, const String &value)
+  {
+    if (!chr)
+      return;
     // Force a stable copy into the characteristic to avoid dangling pointers
     std::string val(value.c_str());
     chr->setValue(val);
   }
 
-  class MyServerCallbacks : public NimBLEServerCallbacks {
-    void onConnect(NimBLEServer* server) override {
+  class MyServerCallbacks : public NimBLEServerCallbacks
+  {
+    void onConnect(NimBLEServer *server) override
+    {
       deviceConnected = true;
       Serial.println("BLE client connected");
     }
 
-    void onDisconnect(NimBLEServer* server) override {
+    void onDisconnect(NimBLEServer *server) override
+    {
       deviceConnected = false;
       Serial.println("BLE client disconnected");
     }
   };
-}  // namespace
 
+  class Chunk0Callbacks : public NimBLECharacteristicCallbacks
+  {
+    void onRead(NimBLECharacteristic *ch) override
+    {
+      ch->setValue(pid_request_list, 20);
+    }
+    void onWrite(NimBLECharacteristic *ch) override
+    {
+      const std::string &v = ch->getValue();
+      if (v.size() == 20)
+      {
+        memcpy(&pid_request_list[0], v.data(), 20);
+        ch->notify();
+      }
+    }
+  };
 
-void updateAllCharacteristics() {
-    size_t total_heap = ESP.getHeapSize();
-    size_t free_heap = ESP.getFreeHeap();
-    uint8_t used_pct = total_heap ? static_cast<uint8_t>(((total_heap - free_heap) * 100) / total_heap) : 0;
+  class Chunk1Callbacks : public NimBLECharacteristicCallbacks
+  {
+    void onRead(NimBLECharacteristic *ch) override
+    {
+      ch->setValue(&pid_request_list[20], 20);
+    }
+    void onWrite(NimBLECharacteristic *ch) override
+    {
+      const std::string &v = ch->getValue();
+      if (v.size() == 20)
+      {
+        memcpy(&pid_request_list[20], v.data(), 20);
+        ch->notify();
+      }
+    }
+  };
+} // namespace
 
-    setValue(chrTime, String(static_cast<long>(rtc.getEpoch())));
-    setValue(chrGpsFix, gps_location_valid ? "1" : "0");
-    setValue(chrGpsSats, String(static_cast<unsigned long>(last_sat_count)));
-    setValue(chrGpsSpeed, String(gps_speed_kmph, 1));
+void updateAllCharacteristics()
+{
+  size_t total_heap = ESP.getHeapSize();
+  size_t free_heap = ESP.getFreeHeap();
+  uint8_t used_pct = total_heap ? static_cast<uint8_t>(((total_heap - free_heap) * 100) / total_heap) : 0;
 
-    char gps_loc[50];
-    sprintf(gps_loc, "%f,%f", fix_lat, fix_lng); 
-    setValue(chrGpsPos, String(gps_loc));
+  setValue(chrTime, String(static_cast<long>(rtc.getEpoch())));
+  setValue(chrGpsFix, gps_location_valid ? "1" : "0");
+  setValue(chrGpsSats, String(static_cast<unsigned long>(last_sat_count)));
+  setValue(chrGpsSpeed, String(gps_speed_kmph, 1));
 
-    setValue(chrWifiStatus, WiFi.isConnected() ? "1" : "0");
-    setValue(chrWifiIp, WiFi.isConnected() ? WiFi.localIP().toString() : String("0.0.0.0"));
-    setValue(chrWifiSignal, String(wifi_signal_percent()));
+  char gps_loc[50];
+  sprintf(gps_loc, "%f,%f", fix_lat, fix_lng);
+  setValue(chrGpsPos, String(gps_loc));
 
-    setValue(chrObdProtocol, ELMprotocol);
+  setValue(chrWifiStatus, WiFi.isConnected() ? "1" : "0");
+  setValue(chrWifiIp, WiFi.isConnected() ? WiFi.localIP().toString() : String("0.0.0.0"));
+  setValue(chrWifiSignal, String(wifi_signal_percent()));
 
-    setValue(chrUploadStage, String(uploadStageName(upload_stage)));
-    setValue(chrUploadInProgress, upload_in_progress ? "1" : "0");
-    setValue(chrUploadCurrentIdx, String(current_upload_file_index));
-    setValue(chrUploadFiles, String(num_of_files));
+  setValue(chrObdProtocol, ELMprotocol);
 
-    setValue(chrLogStatus, log_started ? "1" : "0");
-    setValue(chrTripDistance, String(trip_distance_km, 2));
-    setValue(chrTripPoints, String(static_cast<unsigned long>(trip_locations_count)));
-    setValue(chrTripStartTs, String(static_cast<long>(single_trip_data["start_timestamp"] | 0L)));
+  setValue(chrUploadStage, String(uploadStageName(upload_stage)));
+  setValue(chrUploadInProgress, upload_in_progress ? "1" : "0");
+  setValue(chrUploadCurrentIdx, String(current_upload_file_index));
+  setValue(chrUploadFiles, String(num_of_files));
 
-    setValue(chrCarEngOn, engine_on ? "1" : "0");
-    setValue(chrCarRpm, String(rpmn, 0));
-    setValue(chrCarKmph, String(kmph, 1));
-    setValue(chrCarGpsKmph, String(gps_speed_kmph, 1));
-    setValue(chrCarTemp, String(engine_temp, 1));
-    setValue(chrCarFuel, String(fuel_level, 1));
-    setValue(chrCarBatt, String(battery_voltage, 2));
-    setValue(chrCarLpg, lpg_likely ? "1" : "0");
+  setValue(chrLogStatus, log_started ? "1" : "0");
+  setValue(chrTripDistance, String(trip_distance_km, 2));
+  setValue(chrTripPoints, String(static_cast<unsigned long>(trip_locations_count)));
+  setValue(chrTripStartTs, String(static_cast<long>(single_trip_data["start_timestamp"] | 0L)));
 
-    setValue(chrRamFreeKb, String(static_cast<float>(free_heap) / 1024.0f, 1));
-    setValue(chrRamTotalKb, String(static_cast<float>(total_heap) / 1024.0f, 1));
-    setValue(chrRamUsedPct, String(used_pct));
-  }
+  setValue(chrCarEngOn, engine_on ? "1" : "0");
+  setValue(chrCarRpm, String(rpmn, 0));
+  setValue(chrCarKmph, String(kmph, 1));
+  setValue(chrCarGpsKmph, String(gps_speed_kmph, 1));
+  setValue(chrCarTemp, String(engine_temp, 1));
+  setValue(chrCarFuel, String(fuel_level, 1));
+  setValue(chrCarBatt, String(battery_voltage, 2));
+  setValue(chrCarLpg, lpg_likely ? "1" : "0");
+
+  setValue(chrRamFreeKb, String(static_cast<float>(free_heap) / 1024.0f, 1));
+  setValue(chrRamTotalKb, String(static_cast<float>(total_heap) / 1024.0f, 1));
+  setValue(chrRamUsedPct, String(used_pct));
+
+  pid_rq_list_a->setValue(pid_request_list, 20);
+  pid_rq_list_b->setValue(&pid_request_list[20], 20);
+}
 
 #define SERVICE_UUID "19b10000-e8f2-537e-4f6c-d104768a1214"
 
-inline void ble_setup() {
-  NimBLEDevice::init("Car-Logger");
-//   NimBLEDevice::setPower(ESP_PWR_LVL_P9);
-//   NimBLEDevice::setSecurityAuth(false, false, false);
-//   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
-//   NimBLEDevice::setMTU(160);  // keep modest MTU for browser stacks
+inline void ble_setup()
+{
+
+  String ble_name = "Car-Logger_" + WiFi.macAddress();
+  NimBLEDevice::init(ble_name.c_str());
+  //   NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+  //   NimBLEDevice::setSecurityAuth(false, false, false);
+  //   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
+  //   NimBLEDevice::setMTU(160);  // keep modest MTU for browser stacks
 
   pServer = NimBLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 
-  NimBLEService* pService = pServer->createService(SERVICE_UUID);
+  NimBLEService *pService = pServer->createService(SERVICE_UUID);
 
   chrTime = createReadCharacteristic(pService, "19b10001-e8f2-537e-4f6c-d104768a1214");
   chrGpsFix = createReadCharacteristic(pService, "19b10002-e8f2-537e-4f6c-d104768a1214");
   chrGpsSats = createReadCharacteristic(pService, "19b10003-e8f2-537e-4f6c-d104768a1214");
   chrGpsSpeed = createReadCharacteristic(pService, "19b10004-e8f2-537e-4f6c-d104768a1214");
-  
 
   chrWifiStatus = createReadCharacteristic(pService, "19b10005-e8f2-537e-4f6c-d104768a1214");
   chrWifiIp = createReadCharacteristic(pService, "19b10006-e8f2-537e-4f6c-d104768a1214");
@@ -204,34 +258,45 @@ inline void ble_setup() {
 
   chrGpsPos = createReadCharacteristic(pService, "19b1001c-e8f2-537e-4f6c-d104768a1214");
 
+  pid_rq_list_a = createReadWriteNotifyCharacteristic(pService, "19b1001d-e8f2-537e-4f6c-d104768a1214");
+  pid_rq_list_b = createReadWriteNotifyCharacteristic(pService, "19b1001e-e8f2-537e-4f6c-d104768a1214");
+
+  pid_rq_list_a->setCallbacks(new Chunk0Callbacks());
+  pid_rq_list_b->setCallbacks(new Chunk1Callbacks());
+
   // Keep the tutorial LED characteristic around so clients expecting it can still connect.
-//   chrLegacyLed = createReadWriteCharacteristic(pService, "beb5483e-36e1-4688-b7f5-ea07361b26a8");
+  //   chrLegacyLed = createReadWriteCharacteristic(pService, "beb5483e-36e1-4688-b7f5-ea07361b26a8");
 
   pService->start();
-  updateAllCharacteristics();  // ensure fresh values are available immediately
+  updateAllCharacteristics(); // ensure fresh values are available immediately
 
-  NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
+  NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->setScanResponse(true);
   NimBLEDevice::startAdvertising();
 }
 
-inline void ble_loop() {
+inline void ble_loop()
+{
   uint32_t now = millis();
-  if (now - lastBleUpdateMs >= kBleUpdateIntervalMs) {
+  if (now - lastBleUpdateMs >= kBleUpdateIntervalMs)
+  {
     lastBleUpdateMs = now;
     updateAllCharacteristics();
   }
 
-  if (!deviceConnected && oldDeviceConnected) {
+  if (!deviceConnected && oldDeviceConnected)
+  {
     // delay(500);
-    if(!(pServer->getAdvertising()->isAdvertising())){
-        pServer->startAdvertising();
+    if (!(pServer->getAdvertising()->isAdvertising()))
+    {
+      pServer->startAdvertising();
     }
     oldDeviceConnected = deviceConnected;
   }
 
-  if (deviceConnected && !oldDeviceConnected) {
+  if (deviceConnected && !oldDeviceConnected)
+  {
     oldDeviceConnected = deviceConnected;
   }
 }

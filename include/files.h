@@ -331,3 +331,4 @@ void correct_trip_time_if_needed() {
   time_corrected_this_trip = true;
   Serial.println("Trip time corrected using synced clock");
 }
+

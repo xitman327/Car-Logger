@@ -15,8 +15,9 @@ void set_location(JsonVariant obj){
 }
 
 float get_effective_speed_kmph() {
+  if (elm_connected || can_connected) return kmph;
   if (gps_speed_valid) return gps_speed_kmph;
-  return kmph;
+  return 0.0;
 }
 
 void update_distance_from_speed() {
@@ -70,17 +71,18 @@ void trip_start() {
   single_trip_data["start_timestamp"] = now;
   single_trip_data["trip_locations_count"] = trip_locations_count;
 
-  // FIXED: Use createNestedObject() instead of direct indexing
   JsonObject location = single_trip_data["trip_locations"].createNestedObject();
   location["time"] = now;
   set_location(location);
-  float speed_to_log = get_effective_speed_kmph();
-  location["speed"] = speed_to_log;
-  location["lpg"] = lpg_likely;
-  location["rpm"] = rpmn;
-  location["engine_temp"] = engine_temp;
-  location["lpkm"] = lpkm;
-
+  // location["speed"] = get_effective_speed_kmph();
+  Serial.println("List of pids to log");
+  for(int i =0; i < pid_request_list_size_max;i++){
+    if(pid_request_list[i] != 0){
+      String pname = pid_name(pid_request_list[i]);
+      Serial.println(pname);
+      location[pname] = pid_values[i];
+    }
+  }
   Serial.printf("Trip started %s\n", tripBaseName.c_str());
 }
 
@@ -131,12 +133,14 @@ void populate_current_json() {
   JsonObject location = single_trip_data["trip_locations"].createNestedObject();
   location["time"] = rtc.getEpoch();
   set_location(location);
-  float speed_to_log = get_effective_speed_kmph();
-  location["speed"] = speed_to_log;
-  location["lpg"] = lpg_likely;
-  location["rpm"] = rpmn;
-  location["engine_temp"] = engine_temp;
-  location["lpkm"] = lpkm;
+  // location["speed"] = get_effective_speed_kmph();
+  for(int i =0; i < pid_request_list_size_max;i++){
+    if(pid_request_list[i] != 0){
+      String pname = pid_name(pid_request_list[i]);
+      // Serial.println(pname);
+      location[pname] = pid_values[i];
+    }
+  }
 
   trip_locations_count++;
   single_trip_data["trip_locations_count"] = trip_locations_count;

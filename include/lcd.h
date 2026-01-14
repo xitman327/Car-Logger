@@ -20,7 +20,7 @@ void setup_lcd(){
     Wire.begin(SDA, SCL);
     display_ok = display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS, false);
     if(!display_ok){
-        Serial.println("Display not ok");
+        log_e("Display not ok");
     }else{
         display.clearDisplay();
         display.setRotation(0);
@@ -45,13 +45,23 @@ void loop_lcd(){
         display.println("LOG");
         engine_on? display.setTextColor(BLACK, WHITE) : display.setTextColor(WHITE, BLACK);
         display.println("ENG");
+        detector.base.valid? display.setTextColor(BLACK, WHITE) : display.setTextColor(WHITE, BLACK);
+        display.println("Base");
 
 
-        display.setTextColor(WHITE);
-        display.setCursor(22,18);
-        display.printf("%5.0f", rpmn);
-
-
+        display.setTextColor(WHITE, BLACK);
+        display.setCursor(25,0);
+        display.printf("Loc %5d\n", trip_locations_count);
+        display.setCursor(25,display.getCursorY());
+        display.printf("Kmh   %3.0f\n", kmph);
+        display.setCursor(25,display.getCursorY());
+        display.printf("RPM %5.0f\n", rpmn);
+        display.setCursor(25,display.getCursorY());
+        display.printf("Temp %5.0f\n", temperaturas);
+        display.setCursor(25,display.getCursorY());
+        display.printf("Humd %5.0f\n", humidituras);
+        
+        
         display.display();
     }
 

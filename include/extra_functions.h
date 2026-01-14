@@ -56,39 +56,6 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   }
 }
 
-void sync_rtc_from_gps_fix(const gps_fix &latest_fix) {
-  if (latest_fix.valid.time && latest_fix.valid.date) {
-    int year = latest_fix.dateTime.year;
-    if (year < 100) {
-      year += 2000;
-    }
-    rtc.setTime(
-      latest_fix.dateTime.seconds,
-      latest_fix.dateTime.minutes,
-      latest_fix.dateTime.hours,
-      latest_fix.dateTime.date,
-      latest_fix.dateTime.month,
-      year
-    );
-    rtc.setTime(rtc.getEpoch() + timezone_offset_seconds);
-    gps_time_synced = true;
-    correct_trip_time_if_needed();
-  }
-
-  gps_speed_valid = latest_fix.valid.speed;
-  gps_speed_kmph = gps_speed_valid ? latest_fix.speed_kph() : 0;
-
-  gps_location_valid = latest_fix.valid.location;
-  if(gps_location_valid){
-    fix_lat = latest_fix.latitude();
-    fix_lng = latest_fix.longitude();
-    last_gps_fix_time = rtc.getEpoch();
-  }
-  if(latest_fix.valid.satellites){
-    last_sat_count = latest_fix.satellites;
-  }
-}
-
 void request_ntp_time() {
   if (!WiFi.isConnected()) {
     return;

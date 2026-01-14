@@ -132,7 +132,9 @@ namespace
       const std::string &v = ch->getValue();
       if (v.size() == 20)
       {
+        log_need_restart = 1;
         memcpy(&pid_request_list[0], v.data(), 20);
+        save_settings();
         ch->notify();
       }
     }
@@ -149,7 +151,9 @@ namespace
       const std::string &v = ch->getValue();
       if (v.size() == 20)
       {
+        log_need_restart = 1;
         memcpy(&pid_request_list[20], v.data(), 20);
+        save_settings();
         ch->notify();
       }
     }

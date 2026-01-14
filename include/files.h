@@ -11,57 +11,117 @@ const char* HTTP_PASS = NODERED_PASS;   // e.g. "secret"
 const char* UPLOAD_URL = NODERED_URL;
 
 static bool uploadFileSPIFFS(const char* url, String fileName) {
-  if (!SPIFFS.exists(fileName)) {
-    Serial.printf("File not found in SPIFFS: %s\n", fileName);
-    return false;
-  }
+  int code = 0;
 
-  File f = SPIFFS.open(fileName, FILE_READ);
-  if (!f) {
-    Serial.printf("Failed to open: %s\n", fileName);
-    return false;
-  }
+  if(sd_ready){
+    if(sdfile.exists(fileName.c_str())){
+      Serial.printf("File not found in SDCARD: %s\n", fileName);
+      return false;
+    }
 
-  const size_t fileSize = f.size();
-  if (fileSize == 0) {
-    Serial.printf("File is empty: %s\n", fileName);
+    if(!sdfile.open(fileName.c_str(), O_RDWR)){
+      Serial.printf("Failed to open SD : %s\n", fileName);
+      return false;
+    }
+
+    const size_t fileSize = sdfile.size();
+    if (fileSize == 0) {
+      Serial.printf("SD File is empty: %s\n", fileName);
+      sdfile.close();
+      return false;
+    }
+
+
+    HTTPClient http;
+    WiFiClient client;
+
+    Serial.printf("Uploading %s (%u bytes) -> %s\n", fileName, (unsigned)fileSize, url);
+
+    if (!http.begin(client, url)) {
+      Serial.println("http.begin() failed");
+      sdfile.close();
+      return false;
+    }
+
+    // Optional Basic Auth
+    if (HTTP_USER[0] != '\0') {
+      http.setAuthorization(HTTP_USER, HTTP_PASS);
+    }
+
+    // Metadata headers (Node-RED can use these to name file)
+    http.addHeader("Content-Type", "application/octet-stream");
+    http.addHeader("X-Filename", fileName);
+
+    // This is the important call: streams file directly, no big RAM buffer
+    int code = http.sendRequest("POST", &sdfile, fileSize);
+
+    Serial.printf("HTTP response code: %d\n", code);
+    String resp = http.getString();
+    if (resp.length()) {
+      Serial.println("Server response:");
+      Serial.println(resp);
+    }
+
+    http.end();
+    sdfile.close();
+    if (code >= 200 && code < 300)Serial.println("SD UPLOAD SUCCESS");
+    return (code >= 200 && code < 300);
+
+  }else{
+
+    log_w("USING SPIFFS, LIMITED MEMMORY");
+    if (!SPIFFS.exists(fileName)) {
+      Serial.printf("File not found in SPIFFS: %s\n", fileName);
+      return false;
+    }
+
+    File f = SPIFFS.open(fileName, FILE_READ);
+    if (!f) {
+      Serial.printf("Failed to open: %s\n", fileName);
+      return false;
+    }
+
+    const size_t fileSize = f.size();
+    if (fileSize == 0) {
+      Serial.printf("File is empty: %s\n", fileName);
+      f.close();
+      return false;
+    }
+
+    HTTPClient http;
+    WiFiClient client;
+
+    Serial.printf("Uploading %s (%u bytes) -> %s\n", fileName, (unsigned)fileSize, url);
+
+    if (!http.begin(client, url)) {
+      Serial.println("http.begin() failed");
+      f.close();
+      return false;
+    }
+
+    // Optional Basic Auth
+    if (HTTP_USER[0] != '\0') {
+      http.setAuthorization(HTTP_USER, HTTP_PASS);
+    }
+
+    // Metadata headers (Node-RED can use these to name file)
+    http.addHeader("Content-Type", "application/octet-stream");
+    http.addHeader("X-Filename", fileName);
+
+    // This is the important call: streams file directly, no big RAM buffer
+    code = http.sendRequest("POST", &f, fileSize);
+
+    Serial.printf("HTTP response code: %d\n", code);
+    String resp = http.getString();
+    if (resp.length()) {
+      Serial.println("Server response:");
+      Serial.println(resp);
+    }
+
+    http.end();
     f.close();
-    return false;
+    return (code >= 200 && code < 300);
   }
-
-  HTTPClient http;
-  WiFiClient client;
-
-  Serial.printf("Uploading %s (%u bytes) -> %s\n", fileName, (unsigned)fileSize, url);
-
-  if (!http.begin(client, url)) {
-    Serial.println("http.begin() failed");
-    f.close();
-    return false;
-  }
-
-  // Optional Basic Auth
-  if (HTTP_USER[0] != '\0') {
-    http.setAuthorization(HTTP_USER, HTTP_PASS);
-  }
-
-  // Metadata headers (Node-RED can use these to name file)
-  http.addHeader("Content-Type", "application/octet-stream");
-  http.addHeader("X-Filename", fileName);
-
-  // This is the important call: streams file directly, no big RAM buffer
-  int code = http.sendRequest("POST", &f, fileSize);
-
-  Serial.printf("HTTP response code: %d\n", code);
-  String resp = http.getString();
-  if (resp.length()) {
-    Serial.println("Server response:");
-    Serial.println(resp);
-  }
-
-  http.end();
-  f.close();
-
   // Treat any 2xx as success
   return (code >= 200 && code < 300);
 }
@@ -92,7 +152,43 @@ const char* uploadStageName(UploadStage stage) {
 int get_filenames(){
 
   num_of_files = 0;
-  Serial.println("listing files in /");
+
+  if(sd_ready){
+    Serial.println("listing SD files in /");
+
+    File32 root;
+    root.open("/");
+    File32 lstfile = root.openNextFile();
+
+    while(lstfile){
+      if(num_of_files >= max_filenames)break;
+      if(lstfile.isDirectory()){
+        lstfile = root.openNextFile();
+        continue;
+      }
+      char filenames_tmp[40];
+      size_t filename_size = lstfile.getName(filenames_tmp, sizeof(filenames_tmp));
+      String name(filenames_tmp);
+      if(!name.endsWith(".json")){
+        lstfile = root.openNextFile();
+        continue;
+      }
+      if(!lstfile.attrib(0)){Serial.println("clearing attributes failed");}
+      Serial.print("FILE: ");
+      Serial.print(name);
+      Serial.print("  ");
+      Serial.println(lstfile.size());
+      dir_filenames_array[num_of_files] = name;
+      num_of_files++;
+      lstfile = root.openNextFile();
+    }
+    lstfile.close();
+    root.close();
+
+    return num_of_files;
+
+  }else{
+    Serial.println("listing SPIFFS files in /");
   if(!FS_STARTED){
     Serial.println("FS not started");
     return 0;
@@ -100,38 +196,51 @@ int get_filenames(){
 
   File root = SPIFFS.open("/");
  
-  File file = root.openNextFile();
+  File spifile = root.openNextFile();
  
-  while(file){
+  while(spifile){
       if(num_of_files >= max_filenames)break;
-      if(file.isDirectory()){
-        file = root.openNextFile();
+      if(spifile.isDirectory()){
+        spifile = root.openNextFile();
         continue;
       }
-      String name = file.name();
+      String name = spifile.name();
       if(!name.endsWith(".json")){
-        file = root.openNextFile();
+        spifile = root.openNextFile();
         continue;
       }
+      
       Serial.print("FILE: ");
       Serial.print(name);
       Serial.print("  ");
-      Serial.println(file.size());
+      Serial.println(spifile.size());
       dir_filenames_array[num_of_files] = name.startsWith("/") ? name : "/" + name;
       num_of_files++;
-      file = root.openNextFile();
+      spifile = root.openNextFile();
   }
 
-  file.close();
+  spifile.close();
   root.close();
 
   return num_of_files;
+  }
+
+  return 0;
 }
 
 
 void delete_all_trips(){
   for(int i = get_filenames();i>0;i--){
-    SPIFFS.remove(dir_filenames_array[max(i - 1, 0)]);
+    if(sd_ready){
+      sdfile.open(dir_filenames_array[max(i - 1, 0)].c_str(), O_RDWR);
+      if(!sdfile.remove()){
+        log_e("SD file not deleted %d ", sdfile.getError(), dir_filenames_array[max(i - 1, 0)].c_str());
+      }
+      sdfile.close();
+    }else{
+      SPIFFS.remove(dir_filenames_array[max(i - 1, 0)]);
+    }
+    
   }
 }
 
@@ -160,14 +269,29 @@ bool start_file_upload(int index){
     return false;
   }
 
-  File upload_file = SPIFFS.open(filename, "r");
-  if(!upload_file){
-    Serial.printf("file %s not found\n", filename.c_str());
-    return false;
-  }
+  if(sd_ready){
+    File32 upload_file;
+    upload_file.open(filename.c_str(), O_RDWR);
+    if(!upload_file){
+      Serial.printf("file %s not found\n", filename.c_str());
+      return false;
+    }
+    char filenames_tmp[40];
+    size_t filename_size = upload_file.getName(filenames_tmp, sizeof(filenames_tmp));
+    String name(filenames_tmp);
+    Serial.printf("uploading file %s \n", name);
+    upload_file.close();
 
-  Serial.printf("uploading file %s \n", upload_file.name());
-  upload_file.close();
+  }else{
+    File upload_file = SPIFFS.open(filename, "r");
+    if(!upload_file){
+      Serial.printf("file %s not found\n", filename.c_str());
+      return false;
+    }
+
+    Serial.printf("uploading file %s \n", upload_file.name());
+    upload_file.close();
+  }
 
   upload_done_flag = 0;
   upload_error = false;
@@ -283,10 +407,14 @@ void task_upload_data(){
         if(upload_done_flag){
           if(FS_STARTED && active_upload_file_index >= 0 && active_upload_file_index < num_of_files){
             String fname = dir_filenames_array[active_upload_file_index];
-            if(SPIFFS.remove(fname)){
-              Serial.printf("Upload success, deleted file %s\n", fname.c_str());
+            if(sd_ready){
+              sdfile.open(fname.c_str(), O_RDWR);
+              if(!sdfile.remove()){
+                log_e("SD file not deleted %d ", fname.c_str());
+              }
+              sdfile.close();
             }else{
-              Serial.printf("Upload success, failed to delete file %s\n", fname.c_str());
+              SPIFFS.remove(fname);
             }
           }
           db_retry_count = 0;

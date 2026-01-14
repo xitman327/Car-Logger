@@ -163,9 +163,9 @@ void setup_elm()
         elm_ready = false;
         elm_connected = false;
 
-        ELMSerial.begin(38400, SERIAL_8N1, 47, 48, false, 2000);
+        ELMSerial.begin(38400, SERIAL_8N1, 47, 48);
 
-        if (!myELM327.begin(ELMSerial, false, 2000))
+        if (!myELM327.begin(ELMSerial, false))
         {
             Serial.println("Couldn't connect to OBD scanner");
         }
@@ -430,22 +430,37 @@ void loop_elm()
         if (pid_request_list[pid_request_list_index] != 0)
         {
             uint8_t requested_pid_A = pid_request_list[pid_request_list_index];
+            // log_i("%d - %d", pid_request_list_index, requested_pid_A);
             if(requested_pid_A == 0){pid_request_list_index++;} // pid 0 means disabled, nothing to monitor
             else if(requested_pid_A > 0xc8){// outside of the obd2 pids, livethe onboard adaptor sensors
                 switch (requested_pid_A)
                 {
                 case 0xc9:// adapter temperature
-                    pid_values[pid_request_list_index] = 202.2;//temperaturas;
+                    pid_values[pid_request_list_index] = temperaturas;//temperaturas;
+                    
                     break;
                 case 0xcA:// adapter humidity
-                    pid_values[pid_request_list_index] = 22.3;//humidituras;
+                    pid_values[pid_request_list_index] = humidituras;//humidituras;
                     break;
                 case 0xcB:// elevation
+                    pid_values[pid_request_list_index] = fix.altitude();
+                    break;
+                case 0xcc:
+                    pid_values[pid_request_list_index] = vin;
+                    break;
+                case 0xcD:
+                    pid_values[pid_request_list_index] = aux1;
+                    break;
+                case 0xcE:
+                    pid_values[pid_request_list_index] = aux2;
+                    break;
+                case 0xcF:
+                    pid_values[pid_request_list_index] = aux3;
                     break;
                 
                 
                 default:
-                    log_w("Requested Sensor %d Not Supported", requested_pid_A);
+                    log_e("Requested Sensor %d Not Supported", requested_pid_A);
                     break;
                 }
                 pid_request_list_index++;
@@ -473,6 +488,8 @@ void loop_elm()
                 {
                     log_w("Requested PID %d Not Supported", requested_pid_A);
                 }
+            }else{
+                pid_request_list_index++;
             }
             
         }

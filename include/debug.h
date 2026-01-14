@@ -61,58 +61,38 @@ void printDebugDashboard() {
 }
 
 
-void logDebugStatus() {
-  String ip = WiFi.isConnected() ? WiFi.localIP().toString() : "0.0.0.0";
-  time_t now_epoch = rtc.getEpoch();
-  String last_fix_str = formatEpoch(last_gps_fix_time);
-  String now_str = formatEpoch(now_epoch);
-  size_t total_heap = ESP.getHeapSize();
-  size_t free_heap = ESP.getFreeHeap();
-  uint8_t used_pct = total_heap ? (uint8_t)(((total_heap - free_heap) * 100) / total_heap) : 0;
-  String free_heap_kb = formatKilobytes(free_heap);
-  Serial.printf(
-    "DBG Status -> WiFi:%s IP:%s Firebase init:%d auth:%d ready:%d upload_stage:%s in_progress:%d current_idx:%d files:%d sats:%u last_fix:%s now:%s log:%d rpm:%.0f kmph:%.1f temp:%.1f fuel:%.1f batt:%.2fV lpg:%d RAM:%sKB %u%% used\r",
-    WiFi.isConnected() ? "yes" : "no",
-    ip.c_str(),
-    0, //firebase_initialized,
-    0, //app.isAuthenticated(),
-    0, //app.ready(),
-    uploadStageName(upload_stage),
-    upload_in_progress,
-    current_upload_file_index,
-    num_of_files,
-    last_sat_count,
-    last_fix_str.c_str(),
-    now_str.c_str(),
-    log_started,
-    rpmn,
-    kmph,
-    engine_temp,
-    fuel_level,
-    battery_voltage,
-    lpg_likely,
-    free_heap_kb.c_str(),
-    used_pct
-  );
-}
-
 void handleDebugCommand(char key) {
   switch (key) {
+    case 'H':
+      Serial.println("DBG: Help (H)");
+      Serial.println("Start Log (K)");
+      Serial.println("Stop Log (L)");
+      Serial.println("Deleted all trips (D)");
+      Serial.println("Listed files (F)");
+      Serial.println("DBG: Upload requested (J)");
+      Serial.println("Upload state reset (U)");
+      Serial.println("WiFi Force Connect (W)");
+      Serial.println("Debug Dashboard (B)");
+    break;
     case 'K':
+      temp_trip_start_condition = trip_start_condition;
+      debug_log_start = 1;
       rpmn = 2400;
       kmph = 140;
       maf = 5.7;
-      Serial.println("DBG: Mock high load (K)");
+      Serial.println("DBG: Start Log (K)");
       break;
     case 'L':
+      debug_log_start = 0;
+      trip_start_condition = temp_trip_start_condition;
       rpmn = 0;
       kmph = 0;
       maf = 0;
-      Serial.println("DBG: Mock idle (L)");
+      Serial.println("DBG: Stop Log (L)");
       break;
     case 'J':
       request_trip_upload();
-      Serial.println("DBG: Upload requested (J/H)");
+      Serial.println("DBG: Upload requested (J)");
       break;
     case 'D':
       delete_all_trips();
@@ -132,24 +112,9 @@ void handleDebugCommand(char key) {
         Serial.println("DBG: WiFi connect triggered (W)");
       }
       break;
-    // case 'A':
-    //   ensureFirebaseReady();
-    //   Serial.println("DBG: ensureFirebaseReady invoked (A)");
-    //   break;
-    // case 'R':
-    //   firebase_initialized = false;
-    //   ensureFirebaseReady();
-    //   Serial.println("DBG: Firebase reinit requested (R)");
-    //   break;
     case 'B':
       debug_dashboard_enabled = !debug_dashboard_enabled;
       Serial.printf("DBG: Dashboard %s (B)\n", debug_dashboard_enabled ? "ENABLED" : "DISABLED");
-      if (debug_dashboard_enabled) {
-        printDebugDashboard();
-      }
-      break;
-    case 'S':
-      printDebugDashboard();
       break;
     case 'U':
       upload_stage = WiFi.isConnected() ? UploadAuth : UploadConnectWiFi;

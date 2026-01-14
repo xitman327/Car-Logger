@@ -29,6 +29,8 @@ void save_settings(){
   if(myPreferences.putBytes(node_creds, &nodeRed_credentials, sizeof(nodered_preferences_t))== 0 ){log_e("NodeRed credentials failled to save");}
   if(myPreferences.putBytes(pid_val, &pid_request_list, sizeof(pid_request_list)) == 0){log_e("pid_request_list failled to save");}
   myPreferences.end();
+
+  log_i("\e[0;32m Settings saved");
 }
 
 void load_settings(){
@@ -39,4 +41,6 @@ void load_settings(){
   if(myPreferences.getBytes(node_creds, &nodeRed_credentials, sizeof(nodered_preferences_t)) == 0 ){log_e("NodeRed credentials failled to load");}
   pref_len = myPreferences.getBytesLength(pid_val);
   if(myPreferences.getBytes(pid_val, &pid_request_list, sizeof(pid_request_list)) == 0 ){log_e("pid_request_list failled to load");}
+
+  log_i("\e[0;32m settings loaded");
 }

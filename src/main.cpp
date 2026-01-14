@@ -24,10 +24,6 @@ time_t last_gps_fix_time = 0;
 const char* ntpServer = "pool.ntp.org";
 
 
-#include <NMEAGPS.h>
-NMEAGPS  gps;
-gps_fix  fix;
-
 #include <ESP32Time.h>
 ESP32Time rtc;
 bool gps_time_synced = false;
@@ -86,21 +82,39 @@ int num_of_files = 0;
 String dir_filenames_array[11];
 #define max_filenames 10
 
-HardwareSerial gpsSerial(2);
-
-
 extern int num_of_files;
 
 
+ enum{
+    ADAPT_VOLTAGE,
+    OBD_VOLTAGE,
+    ENG_RPM,
+    VEHECLE_SPEED,
+    GPS_SPEED,
+    GPS_POS_ALTERED,
+    DEBUG_FORCED
+  }trip_start_condition_enum;
+
+  byte trip_start_condition = ENG_RPM;
+  byte temp_trip_start_condition = trip_start_condition;
+  #define CHARGING_VOLTAGE (float)13.5
+
+  float charging_voltage = CHARGING_VOLTAGE;
+bool log_need_restart = 0;
+bool debug_log_start = 0;
+
+#include "sdcard.h"
 #include "sensors.h"
+#include "gps.h"
 #include "obd.h"
+#include "settings.h"
 #include "ble.h"
 #include "trip.h"
 #include "files.h"
 #include "lcd.h"
 #include "debug.h"
 #include "extra_functions.h"
-#include "settings.h"
+
 
 
 
@@ -119,40 +133,42 @@ void setup()
   WiFi.onEvent(WiFiEvent);
   WiFi.mode(WIFI_MODE_STA);
   WiFi.setAutoReconnect(false);
-  WiFi.setAutoConnect(true);
   esp_log_level_set("*",ESP_LOG_INFO);
   Serial.begin(115200);
   
-  gpsSerial.begin(9600, SERIAL_8N1, 38, 37);
+  setup_gps();
 
-  DEBUG_SERIAL.println("Starting");
+  log_i("\e[0;32m Starting");
 
+  setup_sd();
   setup_lcd();
   sensors_setup();
 
   if(SPIFFS.begin(true)){
-    Serial.println("FS STARTED");
+    log_i("FS STARTED");
     FS_STARTED = 1;
   }else{
     if(SPIFFS.format()){
-      Serial.println("FS FORMAT");
+      log_i("FS FORMAT");
       if(SPIFFS.begin()){
-        Serial.println("FS STARTED");
+        log_i("FS STARTED");
         FS_STARTED = 1;
       }else{
         FS_STARTED = 0;
-        Serial.println("FS FAILLED");
+        log_e("FS FAILLED");
       }
     }
     else{
-      Serial.println("FS FORMAT FAILLED");
+      log_e("FS FORMAT FAILLED");
       FS_STARTED = 0;
     }
   }
-  
+  log_d("Starting BLE");
   ble_setup();
+  log_d("BLE OK");
+  log_d("Starting ELM");
   setup_elm();
-  // ensureFirebaseReady();
+  log_d("ELM OK");
 
 
 }
@@ -200,37 +216,72 @@ void loop()
     }
   }
 
-  while (gps.available( gpsSerial )) {
-    fix = gps.read();
-    sync_rtc_from_gps_fix(fix);
-    if(fix.valid.location){
-      fix_lat = fix.latitude();
-      fix_lng = fix.longitude();
-      gps_location_valid = true;
-    } else {
-      gps_location_valid = false;
-    }
-
-  }
+  
 
   if(upload_request){
     task_upload_data();
   }
 
+
   loop_lcd();
   loop_elm();
   ble_loop();
   sensors_loop();
+  loop_gps();
 
-  
+
+ 
 
   if(millis() - tm_log > log_time){
     tm_log = millis();
 
-    if(engine_on && !log_started){
-      trip_start();
-    }else if(!engine_on && log_started){
+    // restart trip if pids change
+    if(log_need_restart && log_started){
+      log_i("Trip Restarting!");
       trip_end();
+      trip_start();
+      log_need_restart = 0;
+    }else if(log_need_restart && !log_started){
+      log_i("No Trip Started!");
+      log_need_restart = 0;
+    }
+
+    switch(trip_start_condition){
+      case ADAPT_VOLTAGE:
+        if(battery_voltage > charging_voltage && !log_started){trip_start();}else
+        if(battery_voltage < charging_voltage && log_started){trip_end();}
+      break;
+      case OBD_VOLTAGE:
+        if(battery_voltage > charging_voltage && !log_started){trip_start();}else
+        if(battery_voltage < charging_voltage && log_started){trip_end();}
+      break;
+      case ENG_RPM:
+        if(rpmn > 350 && !log_started){trip_start();}else
+        if(rpmn < 350 && log_started){trip_end();}
+      break;
+      case VEHECLE_SPEED:
+        if(kmph > 5.0 && !log_started){trip_start();}else
+        if(kmph < 5.0 && log_started){trip_end();}
+      break;
+      case GPS_SPEED:
+        if(fix.speed_kph() > 5.0 && !log_started){trip_start();}else
+        if(fix.speed_kph() < 5.0 && log_started){trip_end();}
+      break;
+      case GPS_POS_ALTERED:
+         if (detector.updateLeaveBase() && !log_started) {
+            trip_start();
+          }
+          if (detector.updateStationaryAndMaybeSetBase() && log_started) {
+            trip_end();
+          }
+      break;
+      case DEBUG_FORCED:
+          if(debug_log_start && !log_started){trip_start();}else
+          if(!debug_log_start && log_started){trip_end();}
+      break;
+      default:
+      break;
+      
     }
 
     if(log_started){

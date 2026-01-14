@@ -6,11 +6,11 @@ String tripBaseName;     // formatted datetime used as filename root
 
 void set_location(JsonVariant obj){
   if(gps_location_valid){
-    obj["lng"] = fix_lng;
-    obj["lat"] = fix_lat;
+    obj.add(fix_lng);
+    obj.add(fix_lat);
   }else{
-    obj["lng"] = nullptr;
-    obj["lat"] = nullptr;
+    obj.add(nullptr);
+    obj.add(nullptr);
   }
 }
 
@@ -71,16 +71,30 @@ void trip_start() {
   single_trip_data["start_timestamp"] = now;
   single_trip_data["trip_locations_count"] = trip_locations_count;
 
-  JsonObject location = single_trip_data["trip_locations"].createNestedObject();
-  location["time"] = now;
-  set_location(location);
-  // location["speed"] = get_effective_speed_kmph();
-  Serial.println("List of pids to log");
+  // determine what objects (sensors - PIDs) to log
+  JsonArray log_objs = single_trip_data["log_objs"].add<JsonArray>();
+  log_objs.add("time");
+  log_objs.add("lng");
+  log_objs.add("lat");
   for(int i =0; i < pid_request_list_size_max;i++){
     if(pid_request_list[i] != 0){
       String pname = pid_name(pid_request_list[i]);
-      Serial.println(pname);
-      location[pname] = pid_values[i];
+      log_objs.add(pname);
+      log_i("\e[0;36m List of pids to log: %d - PID %d - %s \n",i, pid_request_list[i], pname);
+    }
+  }
+  
+  JsonArray location = single_trip_data["trip_locations"].add<JsonArray>();
+  location.add(now);
+
+  set_location(location);
+  // location["speed"] = get_effective_speed_kmph();
+  // Serial.println("List of pids to log");
+  for(int i =0; i < pid_request_list_size_max;i++){
+    if(pid_request_list[i] != 0){
+      // String pname = pid_name(pid_request_list[i]);
+      location.add((float) pid_values[i]);
+      // log_i("\e[0;36m %d - PID %d - %s : %f",i, pid_request_list[i], pname, pid_values[i]);
     }
   }
   Serial.printf("Trip started %s\n", tripBaseName.c_str());
@@ -93,28 +107,36 @@ void split_chunk() {
   snprintf(fname, sizeof(fname), "/%s_%03d.json",
            tripBaseName.c_str(), chunkIndex);
 
-  File f = SPIFFS.open(fname, FILE_WRITE);
-  if (!f) {
-    Serial.println("❌ Failed to save chunk");
-    return;
-  }
-
-  // Add end timestamp for this chunk
   single_trip_data["end_timestamp"] = rtc.getEpoch();
-  
-  uint32_t wrote = serializeJson(single_trip_data, f);
-  f.close();
 
-  Serial.printf("💾 Chunk saved %s (%u bytes) — total count=%d\n",
-                fname, wrote, trip_locations_count);
+  if(sd_ready){
+    if(sdfile.open(fname, O_RDWR)){
+      log_i("File Openned");
+      uint32_t wrote = serializeJson(single_trip_data, sdfile);
+      if(wrote > 0 && sdfile.size() > 0){
+        log_i("File wrote success. %s (%u bytes) — total count=%d", fname, wrote, trip_locations_count);
+      }else{
+        log_e("File error %d", sdfile.getError());
+      }
+      if(!sdfile.attrib(0)){Serial.println("clearing attributes failed");}
+    }else{
+      log_e("File error %d", sdfile.getError());
+    }
+    sdfile.close();
+  }else{
+    log_w("USING SPIFFS, LIMITED MEMMORY");
+    File f = SPIFFS.open(fname, FILE_WRITE);
+    if (f) {
+      uint32_t wrote = serializeJson(single_trip_data, f);
+      log_i("File wrote success. %s (%u bytes) — total count=%d\n", fname, wrote, trip_locations_count);
+    }else{
+      log_e("File error %d", f.getWriteError());
+    }
+    f.close();
+  }
 
   // Clear and prepare for next chunk
   single_trip_data.clear();
-  
-  // Start new chunk with current stats
-  // single_trip_data["start_timestamp"] = rtc.getEpoch();
-  // single_trip_data["trip_locations_count"] = 0;  // Reset for this chunk
-  
   chunkIndex++;
 }
 
@@ -130,15 +152,30 @@ void populate_current_json() {
   single_trip_data["trip_distance"] = trip_distance_km;
 
   // FIXED: Use createNestedObject() here too
-  JsonObject location = single_trip_data["trip_locations"].createNestedObject();
-  location["time"] = rtc.getEpoch();
+  // JsonObject location = single_trip_data["trip_locations"].add<JsonObject>();
+  // location["time"] = rtc.getEpoch();
+  // set_location(location);
+  // // location["speed"] = get_effective_speed_kmph();
+  // for(int i =0; i < pid_request_list_size_max;i++){
+  //   if(pid_request_list[i] != 0){
+  //     String pname = pid_name(pid_request_list[i]);
+  //     // Serial.println(pname);
+  //     location[pname] = pid_values[i];
+  //     // log_i("\e[0;36m %d - PID %d - %s : %f",i, pid_request_list[i], pname, pid_values[i]);
+  //   }
+  // }
+  time_t now = rtc.getEpoch();
+  JsonArray location = single_trip_data["trip_locations"].add<JsonArray>();
+  location.add(now);
+
   set_location(location);
   // location["speed"] = get_effective_speed_kmph();
+  // Serial.println("List of pids to log");
   for(int i =0; i < pid_request_list_size_max;i++){
     if(pid_request_list[i] != 0){
-      String pname = pid_name(pid_request_list[i]);
-      // Serial.println(pname);
-      location[pname] = pid_values[i];
+      // String pname = pid_name(pid_request_list[i]);
+      location.add((float) pid_values[i]);
+      // log_i("\e[0;36m %d - PID %d - %s : %f",i, pid_request_list[i], pname, pid_values[i]);
     }
   }
 
@@ -156,26 +193,36 @@ void trip_end() {
   if (!log_started) return;
   log_started = false;
 
-  // Save leftover unsplit locations
-  // if (single_trip_data["trip_locations"].size() > 0) {
-  //   split_chunk();
-  // }
   char fname[40];
   snprintf(fname, sizeof(fname), "/%s_%03d.json",
            tripBaseName.c_str(), chunkIndex);
-  // Create final file WITHOUT suffix (last <1000 entries)
-  // String fname = "/" + tripBaseName + ".json";
-  File f = SPIFFS.open(fname, FILE_WRITE);
-  if (!f) {
-    Serial.println("❌ Failed to save final trip file");
-    return;
+
+  single_trip_data["end_timestamp"] = rtc.getEpoch();
+  if(sd_ready){
+    if(sdfile.open(fname, O_RDWR | O_CREAT)){
+      log_i("File Openned");
+      uint32_t wrote = serializeJson(single_trip_data, sdfile);
+      if(wrote > 0 && sdfile.size() > 0){
+        log_i("File wrote success. %s (%u bytes) — total count=%d", fname, wrote, trip_locations_count);
+      }else{
+        log_e("File error %d", sdfile.getError());
+      }
+      if(!sdfile.attrib(0)){Serial.println("clearing attributes failed");}
+    }else{
+      log_e("File error %d", sdfile.getError());
+    }
+    sdfile.close();
+  }else{
+    log_w("USING SPIFFS, LIMITED MEMMORY");
+    File f = SPIFFS.open(fname, FILE_WRITE);
+    if (f) {
+      uint32_t wrote = serializeJson(single_trip_data, f);
+      log_i("File wrote success. %s (%u bytes) — total count=%d\n", fname, wrote, trip_locations_count);
+    }else{
+      log_e("File error %d", f.getWriteError());
+    }
+    f.close();
   }
-
-  uint32_t wrote = serializeJson(single_trip_data, f);
-  f.close();
-
-  Serial.printf("🏁 Final file saved %s (%u bytes), total locations=%d\n",
-                fname, wrote, trip_locations_count);
 
   single_trip_data.clear();  // free RAM
   Serial.println("🧹 JSON cleared from RAM");

@@ -1,0 +1,82 @@
+# Car-Logger
+
+ESP32-S3 car data logger that records GPS + OBD-II telemetry to JSON files on SD (or SPIFFS), exposes live status over BLE, shows quick status on a 128x32 OLED, and can upload trips to a Node-RED HTTP endpoint.
+
+## Features
+- OBD-II via ELM327 (Serial1) with configurable PID list and live derived values.
+- GPS logging with base-location detection and time sync.
+- Trip auto-start/stop based on RPM/speed/location logic.
+- Chunked JSON logging to SD (preferred) or SPIFFS fallback.
+- BLE service for live status + PID list updates.
+- Optional Node-RED upload with WiFi reconnect and retry logic.
+- OLED status display and serial debug commands.
+
+## Hardware and wiring (current defaults)
+- Board: `esp32-s3-devkitc-1` (PlatformIO default env).
+- ELM327 on Serial1: RX=47, TX=48.
+- GPS on Serial2: RX=38, TX=37 (9600 baud).
+- OLED SSD1306: I2C SDA=11, SCL=10, 128x32 @ 0x3C.
+- SD card (SPI): CS=15, MOSI=7, MISO=6, SCK=5, DETECT=16.
+- SHT2x sensor on I2C, plus analog inputs for VIN/AUX signals.
+
+Adjust pins in `include/lcd.h`, `include/gps.h`, `include/sdcard.h`, and `include/sensors.h`.
+
+## Configuration
+- WiFi and Node-RED upload endpoint live in `include/user.h`.
+- Preferences (NVS) store WiFi, Node-RED, and PID list; see `include/settings.h`.
+- PID list defaults are defined in `include/obd.h`.
+
+Important: replace the credentials in `include/user.h` with your own before flashing.
+
+## Build and flash (PlatformIO)
+```bash
+pio run
+pio run -t upload
+pio device monitor -b 115200
+```
+
+Default env is `esp32-s3-devkitc-1` in `platformio.ini`.
+
+## Trip logging format
+Trips are logged as JSON arrays in chunked files of 200 points (`CHUNK_SIZE`).
+Filename format: `YYYY-MM-DD_HH-MM-SS_000.json`, `..._001.json`, etc.
+
+Structure:
+- `log_objs`: ordered list of fields.
+- `trip_locations`: array of arrays, each entry matches `log_objs` order.
+
+Example (shortened):
+```json
+{
+  "start_timestamp": 1700000000,
+  "end_timestamp": 1700000123,
+  "trip_locations_count": 200,
+  "log_objs": ["time","lng","lat","Engine RPM","Vehicle spd"],
+  "trip_locations": [
+    [1700000000, -0.12345, 51.50000, 900, 0],
+    [1700000002, -0.12340, 51.50010, 1100, 5]
+  ],
+  "top_speed": 80.5,
+  "max_consumption": 9.2,
+  "trip_distance": 12.34
+}
+```
+
+## Debug controls (Serial)
+- `T`: toggle demo/debug mode (enables commands below).
+- `H`: help.
+- `K`/`L`: force start/stop trip logging.
+- `F`: list trip files.
+- `D`: delete all trips.
+- `J`: request upload.
+- `W`: force WiFi connect.
+- `B`: toggle debug dashboard.
+- `U`: reset upload state.
+
+## Upload flow
+When WiFi is connected and a Node-RED URL is set, the logger can upload JSON files via HTTP POST. Files are streamed from SD/SPIFFS, and successful uploads are deleted.
+
+See `include/files.h` for the upload state machine and `include/user.h` for credentials.
+
+## Wokwi
+`wokwi.toml` points to a `lolin_s3_mini` build output path. If you use Wokwi, update the target paths to match your active PlatformIO environment.

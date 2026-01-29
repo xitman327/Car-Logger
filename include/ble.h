@@ -28,6 +28,10 @@ extern int current_upload_file_index;
 extern int num_of_files;
 extern String ELMprotocol;
 extern int wifi_signal_percent();
+extern wifi_preferenses_t Wifi_credentials[4];
+extern nodered_preferences_t nodeRed_credentials;
+extern byte trip_start_condition;
+extern byte temp_trip_start_condition;
 
 enum UploadStage : uint8_t;
 extern UploadStage upload_stage;
@@ -67,6 +71,22 @@ namespace
   NimBLECharacteristic *chrRamUsedPct = nullptr;
   NimBLECharacteristic *pid_rq_list_a = nullptr;
   NimBLECharacteristic *pid_rq_list_b = nullptr;
+  NimBLECharacteristic *chrWifi1Ssid = nullptr;
+  NimBLECharacteristic *chrWifi1Pass = nullptr;
+  NimBLECharacteristic *chrWifi1Enabled = nullptr;
+  NimBLECharacteristic *chrWifi2Ssid = nullptr;
+  NimBLECharacteristic *chrWifi2Pass = nullptr;
+  NimBLECharacteristic *chrWifi2Enabled = nullptr;
+  NimBLECharacteristic *chrWifi3Ssid = nullptr;
+  NimBLECharacteristic *chrWifi3Pass = nullptr;
+  NimBLECharacteristic *chrWifi3Enabled = nullptr;
+  NimBLECharacteristic *chrWifi4Ssid = nullptr;
+  NimBLECharacteristic *chrWifi4Pass = nullptr;
+  NimBLECharacteristic *chrWifi4Enabled = nullptr;
+  NimBLECharacteristic *chrNodeUrl = nullptr;
+  NimBLECharacteristic *chrNodeUser = nullptr;
+  NimBLECharacteristic *chrNodePass = nullptr;
+  NimBLECharacteristic *chrTripStartCondition = nullptr;
   //   NimBLECharacteristic* chrLegacyLed = nullptr;  // backward-compat with tutorial example
 
   bool deviceConnected = false;
@@ -158,6 +178,106 @@ namespace
       }
     }
   };
+
+  bool parseBoolValue(const std::string &value, bool fallback)
+  {
+    if (value.empty())
+      return fallback;
+    char c = value[0];
+    if (c == '1' || c == 't' || c == 'T' || c == 'y' || c == 'Y')
+      return true;
+    if (c == '0' || c == 'f' || c == 'F' || c == 'n' || c == 'N')
+      return false;
+    return fallback;
+  }
+
+  class StringPreferenceCallbacks : public NimBLECharacteristicCallbacks
+  {
+  public:
+    explicit StringPreferenceCallbacks(String *target, size_t max_len = 0)
+        : target_(target), max_len_(max_len) {}
+
+    void onRead(NimBLECharacteristic *ch) override
+    {
+      if (!target_)
+        return;
+      setValue(ch, *target_);
+    }
+
+    void onWrite(NimBLECharacteristic *ch) override
+    {
+      if (!target_)
+        return;
+      const std::string &v = ch->getValue();
+      String next(v.c_str());
+      if (max_len_ > 0 && next.length() > max_len_)
+      {
+        next = next.substring(0, max_len_);
+      }
+      *target_ = next;
+      save_settings();
+    }
+
+  private:
+    String *target_;
+    size_t max_len_;
+  };
+
+  class BoolPreferenceCallbacks : public NimBLECharacteristicCallbacks
+  {
+  public:
+    explicit BoolPreferenceCallbacks(bool *target) : target_(target) {}
+
+    void onRead(NimBLECharacteristic *ch) override
+    {
+      if (!target_)
+        return;
+      setValue(ch, *target_ ? "1" : "0");
+    }
+
+    void onWrite(NimBLECharacteristic *ch) override
+    {
+      if (!target_)
+        return;
+      const std::string &v = ch->getValue();
+      *target_ = parseBoolValue(v, *target_);
+      save_settings();
+    }
+
+  private:
+    bool *target_;
+  };
+
+  class TripStartConditionCallbacks : public NimBLECharacteristicCallbacks
+  {
+  public:
+    explicit TripStartConditionCallbacks(byte *target)
+        : target_(target) {}
+
+    void onRead(NimBLECharacteristic *ch) override
+    {
+      if (!target_)
+        return;
+      setValue(ch, String(*target_));
+    }
+
+    void onWrite(NimBLECharacteristic *ch) override
+    {
+      if (!target_)
+        return;
+      const std::string &v = ch->getValue();
+      int next = atoi(v.c_str());
+      if (next < 0)
+        next = 0;
+      if (next > 6)
+        next = 6;
+      *target_ = static_cast<byte>(next);
+      save_settings();
+    }
+
+  private:
+    byte *target_;
+  };
 } // namespace
 
 void updateAllCharacteristics()
@@ -206,6 +326,23 @@ void updateAllCharacteristics()
 
   pid_rq_list_a->setValue(pid_request_list, 20);
   pid_rq_list_b->setValue(&pid_request_list[20], 20);
+
+  setValue(chrWifi1Ssid, Wifi_credentials[0].WiFi_Name);
+  setValue(chrWifi1Pass, Wifi_credentials[0].WiFi_Pass);
+  setValue(chrWifi1Enabled, Wifi_credentials[0].enabled ? "1" : "0");
+  setValue(chrWifi2Ssid, Wifi_credentials[1].WiFi_Name);
+  setValue(chrWifi2Pass, Wifi_credentials[1].WiFi_Pass);
+  setValue(chrWifi2Enabled, Wifi_credentials[1].enabled ? "1" : "0");
+  setValue(chrWifi3Ssid, Wifi_credentials[2].WiFi_Name);
+  setValue(chrWifi3Pass, Wifi_credentials[2].WiFi_Pass);
+  setValue(chrWifi3Enabled, Wifi_credentials[2].enabled ? "1" : "0");
+  setValue(chrWifi4Ssid, Wifi_credentials[3].WiFi_Name);
+  setValue(chrWifi4Pass, Wifi_credentials[3].WiFi_Pass);
+  setValue(chrWifi4Enabled, Wifi_credentials[3].enabled ? "1" : "0");
+  setValue(chrNodeUrl, nodeRed_credentials.Node_URL);
+  setValue(chrNodeUser, nodeRed_credentials.Node_User);
+  setValue(chrNodePass, nodeRed_credentials.Node_Pass);
+  setValue(chrTripStartCondition, String(trip_start_condition));
 }
 
 #define SERVICE_UUID "19b10000-e8f2-537e-4f6c-d104768a1214"
@@ -213,6 +350,7 @@ void updateAllCharacteristics()
 inline void ble_setup()
 {
 
+  
   String ble_name = "Car-Logger_" + WiFi.macAddress();
   NimBLEDevice::init(ble_name.c_str());
   //   NimBLEDevice::setPower(ESP_PWR_LVL_P9);
@@ -267,6 +405,40 @@ inline void ble_setup()
 
   pid_rq_list_a->setCallbacks(new Chunk0Callbacks());
   pid_rq_list_b->setCallbacks(new Chunk1Callbacks());
+
+  chrWifi1Ssid = createReadWriteCharacteristic(pService, "19b1001f-e8f2-537e-4f6c-d104768a1214");
+  chrWifi1Pass = createReadWriteCharacteristic(pService, "19b10020-e8f2-537e-4f6c-d104768a1214");
+  chrWifi1Enabled = createReadWriteCharacteristic(pService, "19b10021-e8f2-537e-4f6c-d104768a1214");
+  chrWifi2Ssid = createReadWriteCharacteristic(pService, "19b10022-e8f2-537e-4f6c-d104768a1214");
+  chrWifi2Pass = createReadWriteCharacteristic(pService, "19b10023-e8f2-537e-4f6c-d104768a1214");
+  chrWifi2Enabled = createReadWriteCharacteristic(pService, "19b10024-e8f2-537e-4f6c-d104768a1214");
+  chrWifi3Ssid = createReadWriteCharacteristic(pService, "19b10025-e8f2-537e-4f6c-d104768a1214");
+  chrWifi3Pass = createReadWriteCharacteristic(pService, "19b10026-e8f2-537e-4f6c-d104768a1214");
+  chrWifi3Enabled = createReadWriteCharacteristic(pService, "19b10027-e8f2-537e-4f6c-d104768a1214");
+  chrWifi4Ssid = createReadWriteCharacteristic(pService, "19b10028-e8f2-537e-4f6c-d104768a1214");
+  chrWifi4Pass = createReadWriteCharacteristic(pService, "19b10029-e8f2-537e-4f6c-d104768a1214");
+  chrWifi4Enabled = createReadWriteCharacteristic(pService, "19b1002a-e8f2-537e-4f6c-d104768a1214");
+  chrNodeUrl = createReadWriteCharacteristic(pService, "19b1002b-e8f2-537e-4f6c-d104768a1214");
+  chrNodeUser = createReadWriteCharacteristic(pService, "19b1002c-e8f2-537e-4f6c-d104768a1214");
+  chrNodePass = createReadWriteCharacteristic(pService, "19b1002d-e8f2-537e-4f6c-d104768a1214");
+  chrTripStartCondition = createReadWriteCharacteristic(pService, "19b1002e-e8f2-537e-4f6c-d104768a1214");
+
+  chrWifi1Ssid->setCallbacks(new StringPreferenceCallbacks(&Wifi_credentials[0].WiFi_Name));
+  chrWifi1Pass->setCallbacks(new StringPreferenceCallbacks(&Wifi_credentials[0].WiFi_Pass));
+  chrWifi1Enabled->setCallbacks(new BoolPreferenceCallbacks(&Wifi_credentials[0].enabled));
+  chrWifi2Ssid->setCallbacks(new StringPreferenceCallbacks(&Wifi_credentials[1].WiFi_Name));
+  chrWifi2Pass->setCallbacks(new StringPreferenceCallbacks(&Wifi_credentials[1].WiFi_Pass));
+  chrWifi2Enabled->setCallbacks(new BoolPreferenceCallbacks(&Wifi_credentials[1].enabled));
+  chrWifi3Ssid->setCallbacks(new StringPreferenceCallbacks(&Wifi_credentials[2].WiFi_Name));
+  chrWifi3Pass->setCallbacks(new StringPreferenceCallbacks(&Wifi_credentials[2].WiFi_Pass));
+  chrWifi3Enabled->setCallbacks(new BoolPreferenceCallbacks(&Wifi_credentials[2].enabled));
+  chrWifi4Ssid->setCallbacks(new StringPreferenceCallbacks(&Wifi_credentials[3].WiFi_Name));
+  chrWifi4Pass->setCallbacks(new StringPreferenceCallbacks(&Wifi_credentials[3].WiFi_Pass));
+  chrWifi4Enabled->setCallbacks(new BoolPreferenceCallbacks(&Wifi_credentials[3].enabled));
+  chrNodeUrl->setCallbacks(new StringPreferenceCallbacks(&nodeRed_credentials.Node_URL));
+  chrNodeUser->setCallbacks(new StringPreferenceCallbacks(&nodeRed_credentials.Node_User));
+  chrNodePass->setCallbacks(new StringPreferenceCallbacks(&nodeRed_credentials.Node_Pass));
+  chrTripStartCondition->setCallbacks(new TripStartConditionCallbacks(&trip_start_condition));
 
   // Keep the tutorial LED characteristic around so clients expecting it can still connect.
   //   chrLegacyLed = createReadWriteCharacteristic(pService, "beb5483e-36e1-4688-b7f5-ea07361b26a8");

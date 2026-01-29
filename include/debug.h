@@ -61,6 +61,31 @@ void printDebugDashboard() {
   Serial.println();
 }
 
+void printAllSettings() {
+  Serial.println();
+  Serial.println("===== SETTINGS DUMP =====");
+  for (int i = 0; i < 4; i++) {
+    Serial.printf("WiFi[%d]: ssid:%s pass:%s enabled:%d\n",
+      i,
+      Wifi_credentials[i].WiFi_Name.c_str(),
+      Wifi_credentials[i].WiFi_Pass.c_str(),
+      Wifi_credentials[i].enabled ? 1 : 0);
+  }
+  Serial.printf("Node-RED: url:%s user:%s pass:%s\n",
+    nodeRed_credentials.Node_URL.c_str(),
+    nodeRed_credentials.Node_User.c_str(),
+    nodeRed_credentials.Node_Pass.c_str());
+  Serial.printf("Trip Start Condition: %u\n", (unsigned)trip_start_condition);
+  Serial.print("PID Request List: ");
+  for (size_t i = 0; i < sizeof(pid_request_list); i++) {
+    Serial.printf("%02X", pid_request_list[i]);
+    if (i + 1 < sizeof(pid_request_list)) Serial.print(" ");
+  }
+  Serial.println();
+  Serial.println("==========================");
+  Serial.println();
+}
+
 
 void handleDebugCommand(char key) {
   switch (key) {
@@ -74,6 +99,7 @@ void handleDebugCommand(char key) {
       Serial.println("Upload state reset (U)");
       Serial.println("WiFi Force Connect (W)");
       Serial.println("Debug Dashboard (B)");
+      Serial.println("Print Settings (S)");
     break;
     case 'K':
       temp_trip_start_condition = trip_start_condition;
@@ -116,6 +142,10 @@ void handleDebugCommand(char key) {
     case 'B':
       debug_dashboard_enabled = !debug_dashboard_enabled;
       Serial.printf("DBG: Dashboard %s (B)\n", debug_dashboard_enabled ? "ENABLED" : "DISABLED");
+      break;
+    case 'S':
+      printAllSettings();
+      Serial.println("DBG: Settings printed (S)");
       break;
     case 'U':
       upload_stage = WiFi.isConnected() ? UploadAuth : UploadConnectWiFi;

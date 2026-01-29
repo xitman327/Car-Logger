@@ -88,21 +88,21 @@ String dir_filenames_array[11];
 extern int num_of_files;
 
 
- enum{
-    ADAPT_VOLTAGE,
-    OBD_VOLTAGE,
-    ENG_RPM,
-    VEHECLE_SPEED,
-    GPS_SPEED,
-    GPS_POS_ALTERED,
-    DEBUG_FORCED
-  }trip_start_condition_enum;
+enum{
+  ADAPT_VOLTAGE,
+  OBD_VOLTAGE,
+  ENG_RPM,
+  VEHECLE_SPEED,
+  GPS_SPEED,
+  GPS_POS_ALTERED,
+  DEBUG_FORCED
+}trip_start_condition_enum;
 
-  byte trip_start_condition = ENG_RPM;
-  byte temp_trip_start_condition = trip_start_condition;
-  #define CHARGING_VOLTAGE (float)13.5
+byte trip_start_condition = ENG_RPM;
+byte temp_trip_start_condition = trip_start_condition;
+#define CHARGING_VOLTAGE (float)13.5
 
-  float charging_voltage = CHARGING_VOLTAGE;
+float charging_voltage = CHARGING_VOLTAGE;
 bool log_need_restart = 0;
 bool debug_log_start = 0;
 

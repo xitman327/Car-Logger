@@ -3,21 +3,18 @@
 
 SHT2x sht;
 
-#define vin_pin 14
-#define aux1_pin 14
-#define aux2_pin 14
-#define aux3_pin 14
+
 
 float temperaturas, humidituras;
 float vin, aux1,aux2,aux3;
 
-#define vin_devider_r1 10000
+#define vin_devider_r1 27000
 #define vin_divider_r2 1000
-#define aux1_devider_r1 10000
+#define aux1_devider_r1 27000
 #define aux1_divider_r2 1000
-#define aux2_devider_r1 10000
+#define aux2_devider_r1 27000
 #define aux2_divider_r2 1000
-#define aux3_devider_r1 10000
+#define aux3_devider_r1 27000
 #define aux3_divider_r2 1000
 
 #define VIN_FROM_ADC(adc, R1, R2, VREF) (((float)(adc) * (VREF) / 4095.0f) * ((R1) + (R2)) / (R2))
@@ -32,7 +29,6 @@ uint32_t intervalHum = 5000;
 uint32_t tm_analog = 0;
 
 void sensors_setup(){
-    // Wire.begin(SDA, SCL);
     if(!sht.begin()){log_e("SHT Sensor not ok"); return;}
     delay(20);
     sht.requestTemperature();

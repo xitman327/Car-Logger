@@ -155,6 +155,7 @@ String fetchCurrentProtocol()
     return name;
 }
 
+
 void setup_elm()
 {
 
@@ -163,9 +164,9 @@ void setup_elm()
         elm_ready = false;
         elm_connected = false;
 
-        ELMSerial.begin(38400, SERIAL_8N1, 47, 48);
+        ELMSerial.begin(38400, SERIAL_8N1, ELM_RX, ELM_TX, false, 200);
 
-        if (!myELM327.begin(ELMSerial, false))
+        if (!myELM327.begin(ELMSerial, false, 200))
         {
             Serial.println("Couldn't connect to OBD scanner");
         }
@@ -443,7 +444,7 @@ void loop_elm()
                     pid_values[pid_request_list_index] = humidituras;//humidituras;
                     break;
                 case 0xcB:// elevation
-                    pid_values[pid_request_list_index] = fix.altitude();
+                    // pid_values[pid_request_list_index] = fix.altitude();
                     break;
                 case 0xcc:
                     pid_values[pid_request_list_index] = vin;

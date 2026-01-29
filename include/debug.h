@@ -23,11 +23,12 @@ void printDebugDashboard() {
   Serial.println();
   Serial.println("===== DEBUG DASHBOARD =====");
   Serial.printf("Time: %s\n", now_str.c_str());
-  Serial.printf("GPS : %s | sats:%u | last_fix:%s | speed:%.1f km/h\n",
+  Serial.printf("GPS : %s | sats:%u | last_fix:%s | speed:%.1f km/h | last_gps_msg %d\n",
     gps_location_valid ? "FIX" : "NO-FIX",
     last_sat_count,
     last_fix_str.c_str(),
-    gps_speed_kmph);
+    gps_speed_kmph,
+    last_gps);
   Serial.printf("WiFi: %s | IP:%s | signal:%d%%\n",
     WiFi.isConnected() ? "CONNECTED" : "OFFLINE",
     ip.c_str(),
@@ -128,8 +129,46 @@ void handleDebugCommand(char key) {
       upload_request = 1;
       Serial.println("DBG: Upload state reset (U)");
       break;
+    case 'P':
+      // Serial.println(pin)
+    break;
     default:
       Serial.printf("DBG: Unhandled key '%c'\n", key);
       break;
   }
+}
+
+#include <ezButton.h>
+
+ezButton button(USER_BUTTON);  // create ezButton object that attach to pin 7;
+uint32_t tm_button_pressed;
+#define button_presses_timeout 500
+
+#define button_timeout (millis() - tm_button_pressed > button_presses_timeout)
+
+void setup_button(){
+  button.setDebounceTime(50); // set debounce time to 50 milliseconds
+  button.setCountMode(COUNT_FALLING);
+}
+
+void loop_button(){
+  button.loop();
+  
+  if(button.isPressed()){
+    tm_button_pressed = millis();
+    log_d("button pressed : %d", button.getCount());
+  }
+
+  if (button.getCount() >= 10 && button_timeout){
+    default_settings();
+    button.resetCount();
+    log_d("default settings");
+  }
+
+  if(button.getCount() && button_timeout){
+    button.resetCount();
+    log_d("count reset");
+  }
+
+
 }

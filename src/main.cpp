@@ -1,8 +1,11 @@
+
+#include "pins.h"
+
 #define DEFAULT_DEMO_MODE 0
 #define DEBUG_SERIAL Serial
 #include "constants.h"
 #include "SPIFFS.h"
-#include "user.h"
+// #include "user.h"
 #include "WiFi.h"
 #include <WiFiClientSecure.h>
 #include <WebServer.h>
@@ -121,22 +124,19 @@ bool debug_log_start = 0;
 void setup()
 {
 
+
+  pinMode(LEDA, OUTPUT);
+  pinMode(LEDB, OUTPUT);
+  
   load_settings();
-  pixels.begin();
-  pixels.clear();
-  pixels.setBrightness(10);
-  pixels.show();
 
   analogReadResolution(12);
-  pinMode(light_sensor, ANALOG);
 
   WiFi.onEvent(WiFiEvent);
   WiFi.mode(WIFI_MODE_STA);
   WiFi.setAutoReconnect(false);
   esp_log_level_set("*",ESP_LOG_INFO);
   Serial.begin(115200);
-  
-  setup_gps();
 
   log_i("\e[0;32m Starting");
 
@@ -163,12 +163,15 @@ void setup()
       FS_STARTED = 0;
     }
   }
-  log_d("Starting BLE");
+  // log_d("Starting BLE");
   ble_setup();
-  log_d("BLE OK");
-  log_d("Starting ELM");
+  // log_d("BLE OK");
+  // log_d("Starting ELM");
   setup_elm();
-  log_d("ELM OK");
+  // log_d("ELM OK");
+  setup_gps();
+
+  setup_button();
 
 
 }
@@ -190,19 +193,11 @@ uint32_t tm_debug_report = 0;
 void loop()
 {
   if(WiFi.isConnected()){
-    // ensureFirebaseReady();
-    // app.loop();
     if(!gps_time_synced || !wifi_time_synced){
       sync_time_from_wifi();
     }
   }
 
-  if(millis() - tm_led > led_time){
-    tm_led = millis();
-    uint32_t color = pixels.ColorHSV(hue * 256, 255, 255);
-    runRgbWave(pixels, NUMPIXELS, color, 10, 0.5);
-    hue++;
-  }
 
   while (Serial.available()) {
     char key = Serial.read();
@@ -228,6 +223,7 @@ void loop()
   ble_loop();
   sensors_loop();
   loop_gps();
+  loop_button();
 
 
  
@@ -264,20 +260,19 @@ void loop()
         if(kmph < 5.0 && log_started){trip_end();}
       break;
       case GPS_SPEED:
-        if(fix.speed_kph() > 5.0 && !log_started){trip_start();}else
-        if(fix.speed_kph() < 5.0 && log_started){trip_end();}
+        if (gps.speed.isValid()) {
+          double s = gps.speed.kmph();
+          if (!log_started && s > 6.0) {trip_start();} 
+          else if (log_started && s < 3.0) {trip_end();}
+        }
       break;
       case GPS_POS_ALTERED:
-         if (detector.updateLeaveBase() && !log_started) {
-            trip_start();
-          }
-          if (detector.updateStationaryAndMaybeSetBase() && log_started) {
-            trip_end();
-          }
+        if (detector.updateLeaveBase(gps) && !log_started) {trip_start();}
+        if (detector.updateStationaryAndMaybeSetBase(gps) && log_started) {trip_end();}
       break;
       case DEBUG_FORCED:
-          if(debug_log_start && !log_started){trip_start();}else
-          if(!debug_log_start && log_started){trip_end();}
+        if(debug_log_start && !log_started){trip_start();}else
+        if(!debug_log_start && log_started){trip_end();}
       break;
       default:
       break;

@@ -286,7 +286,10 @@ inline void ble_loop()
   if (now - lastBleUpdateMs >= kBleUpdateIntervalMs)
   {
     lastBleUpdateMs = now;
-    updateAllCharacteristics();
+    if(deviceConnected){
+      updateAllCharacteristics();
+    }
+    
   }
 
   if (!deviceConnected && oldDeviceConnected)

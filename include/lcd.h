@@ -1,5 +1,4 @@
-#define SDA 11
-#define SCL 10
+
 
 #include <Wire.h>
 #include <Adafruit_GFX.h>
@@ -17,7 +16,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 // SSD1306Wire display(0x3c, SDA, SCL, GEOMETRY_128_32);
 bool display_ok = false;
 void setup_lcd(){
-    Wire.begin(SDA, SCL);
+    Wire.begin(SDA_PIN, SCL_PIN);
     display_ok = display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS, false);
     if(!display_ok){
         log_e("Display not ok");
@@ -45,8 +44,8 @@ void loop_lcd(){
         display.println("LOG");
         engine_on? display.setTextColor(BLACK, WHITE) : display.setTextColor(WHITE, BLACK);
         display.println("ENG");
-        detector.base.valid? display.setTextColor(BLACK, WHITE) : display.setTextColor(WHITE, BLACK);
-        display.println("Base");
+        // detector.base.valid? display.setTextColor(BLACK, WHITE) : display.setTextColor(WHITE, BLACK);
+        // display.println("Base");
 
 
         display.setTextColor(WHITE, BLACK);

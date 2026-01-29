@@ -8,11 +8,7 @@
 #include "SdFat.h"
 
 
-#define SD_CS 15
-#define SD_MOSI 7
-#define SD_MISO 6
-#define SD_SCK 5
-#define SD_DETECT 16
+
 
 SdFat32 sd;
 File32 sdfile;
@@ -21,12 +17,6 @@ File32 sdfile;
 int sd_ready = 0;
 
 void setup_sd(){
-    // TEST BOARD ONLY, SHARED BUS BETWEEN LCD AND TOUCH IC
-    // DESELECT THOSE
-    pinMode(17, OUTPUT);
-    digitalWrite(17, HIGH);
-    pinMode(8, OUTPUT);
-    digitalWrite(8, HIGH);
 
 
     // Initialize SPI bus on your chosen pins

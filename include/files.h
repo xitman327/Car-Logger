@@ -1,14 +1,20 @@
 #include <HTTPClient.h>
 
+#ifndef WIFI_SSID
+#define WIFI_SSID Wifi_credentials[0].WiFi_Name
+#define WIFI_PASS Wifi_credentials[0].WiFi_Pass
+#endif
+
 #ifndef NODERED_USER
-#define NODERED_USER ""
-#define NODERED_PASS ""
+#define NODERED_USER nodeRed_credentials.Node_User
+#define NODERED_PASS nodeRed_credentials.Node_Pass
+#define NODERED_URL nodeRed_credentials.Node_URL
 #endif
 // If your Node-RED endpoint is protected with basic auth, set these.
 // Otherwise leave as empty strings.
-const char* HTTP_USER = NODERED_USER;   // e.g. "admin"
-const char* HTTP_PASS = NODERED_PASS;   // e.g. "secret"
-const char* UPLOAD_URL = NODERED_URL;
+const char* HTTP_USER = NODERED_USER.c_str();   // e.g. "admin"
+const char* HTTP_PASS = NODERED_PASS.c_str();   // e.g. "secret"
+const char* UPLOAD_URL = NODERED_URL.c_str();
 
 static bool uploadFileSPIFFS(const char* url, String fileName) {
   int code = 0;

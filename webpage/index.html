@@ -2402,6 +2402,7 @@ function renderPositionList() {
                 document.getElementById('trips-list').innerHTML = `
                 <div class="alert alert-danger">
                     Error loading trips: ${e.message}
+                    <button class="btn btn-primary w-100" onclick="showAuth()">Login Again</button>
                 </div>
                 `;
             }

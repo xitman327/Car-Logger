@@ -942,7 +942,7 @@
     
     <script>
 
-        let API_BASE = 'https://google.com/api';
+        let API_BASE = localStorage.getItem('nr_url');
 
         function basicAuthHeader(username, password) {
             return 'Basic ' + btoa(`${username}:${password}`);

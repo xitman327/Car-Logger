@@ -47,8 +47,8 @@
             --input-border: #ced4da;
         }
         body[data-theme="night"] {
-            --bg-color: #0f1115;
-            --panel-bg: #151922;
+            --bg-color: #0f0f0f;
+            --panel-bg: #0f0f0f;
             --card-bg: #151922;
             --text-color: #e6e9ef;
             --muted-color: #9aa4b2;
@@ -62,8 +62,8 @@
         }
         @media (prefers-color-scheme: dark) {
             body[data-theme="system"] {
-                --bg-color: #0f1115;
-                --panel-bg: #151922;
+                --bg-color: #0f0f0f;
+                --panel-bg: #0f0f0f;
                 --card-bg: #151922;
                 --text-color: #e6e9ef;
                 --muted-color: #9aa4b2;
@@ -81,6 +81,7 @@
             cursor: pointer;
             transition: all 0.3s;
             margin-bottom: 10px;
+            background-color: var(--card-bg);
         }
         .trip-card:hover {
             transform: translateY(-5px);
@@ -88,10 +89,12 @@
         }
         .trip-card .card-body {
             padding: 10px 12px;
+            
         }
         .trip-card .card-title {
             font-size: 1rem;
             margin-bottom: 2px;
+            color: var(--text-color);
         }
         .trip-card .trip-stats {
             font-size: 0.9rem;

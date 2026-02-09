@@ -28,7 +28,7 @@ extern int current_upload_file_index;
 extern int num_of_files;
 extern String ELMprotocol;
 extern int wifi_signal_percent();
-extern wifi_preferenses_t Wifi_credentials[4];
+extern wifi_preferences_t Wifi_credentials[4];
 extern nodered_preferences_t nodeRed_credentials;
 extern byte trip_start_condition;
 extern byte temp_trip_start_condition;

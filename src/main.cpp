@@ -109,7 +109,11 @@ bool debug_log_start = 0;
 #include "sdcard.h"
 #include "sensors.h"
 #include "gps.h"
-#include "obd.h"
+#ifdef OBD2_ONBOARD
+#include "obd_ONBOARD.h"
+#else
+#include "obd_ELM.h"
+#endif
 #include "settings.h"
 #include "ble.h"
 #include "trip.h"
@@ -118,17 +122,25 @@ bool debug_log_start = 0;
 #include "debug.h"
 #include "extra_functions.h"
 
-
+TaskHandle_t Core0_CodeHandle = NULL;
+void Core0_Code(void *parameter){
+  log_i("ELM ON CORE %d", xPortGetCoreID() );
+  setup_elm();
+  for(;;){
+    loop_elm();
+  }
+}
 
 
 void setup()
 {
 
 
+
   pinMode(LEDA, OUTPUT);
   pinMode(LEDB, OUTPUT);
   
-  load_settings();
+  // load_settings();
 
   analogReadResolution(12);
 
@@ -138,9 +150,11 @@ void setup()
   esp_log_level_set("*",ESP_LOG_INFO);
   Serial.begin(115200);
 
+  delay(1000);
   log_i("\e[0;32m Starting");
 
   setup_sd();
+  load_settings();
   setup_lcd();
   sensors_setup();
 
@@ -167,12 +181,22 @@ void setup()
   ble_setup();
   // log_d("BLE OK");
   // log_d("Starting ELM");
-  setup_elm();
+  // setup_elm();// moved to Core 0
   // log_d("ELM OK");
   setup_gps();
 
   setup_button();
 
+  xTaskCreatePinnedToCore(
+    Core0_Code,         // Task function
+    "BlinkTask",       // Task name
+    10000,             // Stack size (bytes)
+    NULL,              // Parameters
+    1,                 // Priority
+    &Core0_CodeHandle,  // Task handle
+    0                  // Core 0
+  );
+  log_i("MAIN ON CORE %d", xPortGetCoreID() );
 
 }
 
@@ -219,7 +243,7 @@ void loop()
 
 
   loop_lcd();
-  loop_elm();
+  // loop_elm(); //// moved to Core 0
   ble_loop();
   sensors_loop();
   loop_gps();

@@ -1,6 +1,13 @@
 
-#define ELM_RX  17
-#define ELM_TX  18
+#define OBD_SERIAL Serial1
+
+#define OBD_RX 18
+#define OBD_TX 17
+
+#define TALK_TO_CAN_PIN 8
+
+#define ELM_RX  OBD_RX
+#define ELM_TX  OBD_TX
 
 #define GPS_RX  16
 #define GPS_TX  15
@@ -14,7 +21,7 @@
 #define SD_SCK 39
 #define SD_DETECT 9
 
-#define vin_pin 12
+#define vin_pin 6
 #define aux1_pin 7
 #define aux2_pin 4
 #define aux3_pin 5

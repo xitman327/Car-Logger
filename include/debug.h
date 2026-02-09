@@ -33,7 +33,7 @@ void printDebugDashboard() {
     WiFi.isConnected() ? "CONNECTED" : "OFFLINE",
     ip.c_str(),
     wifi_signal_percent());
-  Serial.printf("OBD : protocol: %s\n", ELMprotocol.c_str());
+  Serial.printf("OBD Adapter: %s Car: %s protocol: %s Vin: %2.1f\n", elm_ready?"Connected":"Error", elm_connected?"Connected":"Error" , ELMprotocol.c_str(), vin);
   Serial.printf("Upload: stage:%s | in_progress:%d | current_idx:%d | files:%d\n",
     uploadStageName(upload_stage),
     upload_in_progress,

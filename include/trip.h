@@ -59,6 +59,7 @@ String formatEpochForFilename(time_t ts) {
 void trip_start() {
   log_started = true;
   trip_locations_count = 0;
+  trip_distance_km = 0.0;
   chunkIndex = 0;
   single_trip_data.clear();
 

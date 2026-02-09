@@ -6,57 +6,58 @@
 #endif
 
 #ifndef NODERED_USER
-#define NODERED_USER nodeRed_credentials.Node_User
-#define NODERED_PASS nodeRed_credentials.Node_Pass
-#define NODERED_URL nodeRed_credentials.Node_URL
+#define NODERED_USER nodeRed_credentials.Node_User.c_str()
+#define NODERED_PASS nodeRed_credentials.Node_Pass.c_str()
+#define NODERED_URL nodeRed_credentials.Node_URL.c_str()
 #endif
 // If your Node-RED endpoint is protected with basic auth, set these.
 // Otherwise leave as empty strings.
-const char* HTTP_USER = NODERED_USER.c_str();   // e.g. "admin"
-const char* HTTP_PASS = NODERED_PASS.c_str();   // e.g. "secret"
-const char* UPLOAD_URL = NODERED_URL.c_str();
+// const char* HTTP_USER = NODERED_USER.c_str();   // e.g. "admin"
+// const char* HTTP_PASS = NODERED_PASS.c_str();   // e.g. "secret"
+// const char* UPLOAD_URL = NODERED_URL.c_str();
+
+HTTPClient http;
+    WiFiClient client;
 
 static bool uploadFileSPIFFS(const char* url, String fileName) {
   int code = 0;
+  const char * filePath = fileName.c_str();
 
   if(sd_ready){
-    if(sdfile.exists(fileName.c_str())){
-      Serial.printf("File not found in SDCARD: %s\n", fileName);
+    if(sdfile.exists(filePath)){
+      log_e("File not found in SDCARD: %s\n", filePath);
       return false;
     }
 
-    if(!sdfile.open(fileName.c_str(), O_RDWR)){
-      Serial.printf("Failed to open SD : %s\n", fileName);
+    if(!sdfile.open(filePath, O_RDWR)){
+      log_e("Failed to open SD : %s\n", filePath);
       return false;
     }
 
     const size_t fileSize = sdfile.size();
     if (fileSize == 0) {
-      Serial.printf("SD File is empty: %s\n", fileName);
+      log_e("SD File is empty: %s\n", filePath);
       sdfile.close();
       return false;
     }
 
+    log_i("%s %u bytes to %s", filePath, fileSize, url);
 
-    HTTPClient http;
-    WiFiClient client;
-
-    Serial.printf("Uploading %s (%u bytes) -> %s\n", fileName, (unsigned)fileSize, url);
-
+    http.end();
     if (!http.begin(client, url)) {
-      Serial.println("http.begin() failed");
+      log_e("http.begin() failed ");
       sdfile.close();
       return false;
-    }
+    }else{log_i("http ok");}
 
     // Optional Basic Auth
-    if (HTTP_USER[0] != '\0') {
-      http.setAuthorization(HTTP_USER, HTTP_PASS);
+    if (NODERED_USER[0] != '\0') {
+      http.setAuthorization(NODERED_USER, NODERED_PASS);
     }
 
     // Metadata headers (Node-RED can use these to name file)
     http.addHeader("Content-Type", "application/octet-stream");
-    http.addHeader("X-Filename", fileName);
+    http.addHeader("X-Filename", filePath);
 
     // This is the important call: streams file directly, no big RAM buffer
     int code = http.sendRequest("POST", &sdfile, fileSize);
@@ -76,20 +77,20 @@ static bool uploadFileSPIFFS(const char* url, String fileName) {
   }else{
 
     log_w("USING SPIFFS, LIMITED MEMMORY");
-    if (!SPIFFS.exists(fileName)) {
-      Serial.printf("File not found in SPIFFS: %s\n", fileName);
+    if (!SPIFFS.exists(filePath)) {
+      Serial.printf("File not found in SPIFFS: %s\n", filePath);
       return false;
     }
 
-    File f = SPIFFS.open(fileName, FILE_READ);
+    File f = SPIFFS.open(filePath, FILE_READ);
     if (!f) {
-      Serial.printf("Failed to open: %s\n", fileName);
+      Serial.printf("Failed to open: %s\n", filePath);
       return false;
     }
 
     const size_t fileSize = f.size();
     if (fileSize == 0) {
-      Serial.printf("File is empty: %s\n", fileName);
+      Serial.printf("File is empty: %s\n", filePath);
       f.close();
       return false;
     }
@@ -97,7 +98,7 @@ static bool uploadFileSPIFFS(const char* url, String fileName) {
     HTTPClient http;
     WiFiClient client;
 
-    Serial.printf("Uploading %s (%u bytes) -> %s\n", fileName, (unsigned)fileSize, url);
+    Serial.printf("Uploading %s (%u bytes) -> %s\n", filePath, (unsigned)fileSize, url);
 
     if (!http.begin(client, url)) {
       Serial.println("http.begin() failed");
@@ -106,13 +107,13 @@ static bool uploadFileSPIFFS(const char* url, String fileName) {
     }
 
     // Optional Basic Auth
-    if (HTTP_USER[0] != '\0') {
-      http.setAuthorization(HTTP_USER, HTTP_PASS);
+    if (NODERED_USER[0] != '\0') {
+      http.setAuthorization(NODERED_USER, NODERED_PASS);
     }
 
     // Metadata headers (Node-RED can use these to name file)
     http.addHeader("Content-Type", "application/octet-stream");
-    http.addHeader("X-Filename", fileName);
+    http.addHeader("X-Filename", filePath);
 
     // This is the important call: streams file directly, no big RAM buffer
     code = http.sendRequest("POST", &f, fileSize);
@@ -285,7 +286,7 @@ bool start_file_upload(int index){
     char filenames_tmp[40];
     size_t filename_size = upload_file.getName(filenames_tmp, sizeof(filenames_tmp));
     String name(filenames_tmp);
-    Serial.printf("uploading file %s \n", name);
+    Serial.printf("uploading file %s \n", name.c_str());
     upload_file.close();
 
   }else{
@@ -306,10 +307,13 @@ bool start_file_upload(int index){
   active_upload_file_index = index;
   db_retry_count = 0;
 
-  if(uploadFileSPIFFS(UPLOAD_URL, filename)){
+  if(uploadFileSPIFFS(NODERED_URL, filename)){
     upload_done_flag = true;
     upload_in_progress = false;
     Serial.println("Upload done");
+  }else{
+    log_e("file upload error");
+    return false;
   }
 
   return true;

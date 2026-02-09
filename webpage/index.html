@@ -47,6 +47,7 @@
             --input-border: #ced4da;
         }
         body[data-theme="night"] {
+            color-scheme: dark;
             --bg-color: #0f0f0f;
             --panel-bg: #0f0f0f;
             --card-bg: #151922;
@@ -62,6 +63,7 @@
         }
         @media (prefers-color-scheme: dark) {
             body[data-theme="system"] {
+                color-scheme: dark;
                 --bg-color: #0f0f0f;
                 --panel-bg: #0f0f0f;
                 --card-bg: #151922;
@@ -503,6 +505,9 @@
             background-color: var(--input-bg);
             border-color: var(--input-border);
         }
+        .inline-block-child {
+            display: inline-block;
+            }
     </style>
 </head>
 <body>
@@ -511,12 +516,23 @@
   position:fixed; inset:0; background:rgba(0,0,0,.45);
   z-index:99999; align-items:center; justify-content:center;">
   <div style="background:var(--card-bg); padding:18px; border-radius:10px; width:320px;">
+    <!-- <div class="parent">
+        <div class="inline-block-child"><h5>Node-RED Login</h5></div>
+        <div class="inline-block-child"><button class="btn btn-sm" onclick="hideAuth()">Close</button></div>
+    
+    </div> -->
     <h5>Node-RED Login</h5>
     <div id="auth-error" style="color:#c00; display:none; margin-bottom:8px;"></div>
     <input id="auth-url" class="form-control mb-2" placeholder="https://nodered.com/endpoint/api">
     <input id="auth-user" class="form-control mb-2" placeholder="Username">
     <input id="auth-pass" type="password" class="form-control mb-3" placeholder="Password">
-    <button class="btn btn-primary w-100" onclick="submitAuth()">Login</button>
+    <div class="parent">
+        <div class="inline-block-child"><button class="btn btn-primary w-100" onclick="submitAuth()">Login</button></div>
+        <div class="inline-block-child"><button class="btn btn-sm" onclick="hideAuth()">Close</button></div>
+    
+    </div>
+    <!-- <button class="btn btn-primary w-100" onclick="submitAuth()">Login</button>
+    <button class="btn btn-sm" onclick="hideAuth()">Close</button> -->
   </div>
 </div>
     <div id="nodered-config-overlay" style="display:none;

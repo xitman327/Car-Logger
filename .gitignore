@@ -4,3 +4,9 @@
 .vscode/launch.json
 .vscode/ipch
 include/user.h
+access_log
+agent_log
+error_log
+referer_log
+start.cmd
+tools

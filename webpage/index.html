@@ -2853,6 +2853,23 @@ function renderPositionList() {
             
 
 
+            // Build colored segments based on speed (0-200 km/h scale)
+            const segments = [];
+            for (let i = 1; i < locations.length; i++) {
+                const start = locations[i - 1];
+                const end = locations[i];
+                const segmentSpeed = start.Vehicle_Speed ?? 0; // approximate speed for segment
+                const segmentColor = getSpeedColor(segmentSpeed, trip.top_speed);
+                const segment = L.polyline(
+                    [[start.lat, start.lng], [end.lat, end.lng]],
+                    { color: segmentColor, weight: 4, opacity: 0.85 }
+                ).addTo(map);
+                segments.push(segment);
+                layerParts.push(segment);
+            }
+
+            polyline = segments.length ? L.layerGroup(segments).addTo(map) : null;
+
             // Use circles for intermediate points, start/end icons for endpoints
             locations.forEach((location, index) => {
                 const isFirst = index === 0;
@@ -2901,23 +2918,6 @@ function renderPositionList() {
                 markers.push(marker);
                 layerParts.push(marker);
             });
-
-            // Build colored segments based on speed (0-200 km/h scale)
-            const segments = [];
-            for (let i = 1; i < locations.length; i++) {
-                const start = locations[i - 1];
-                const end = locations[i];
-                const segmentSpeed = start.Vehicle_Speed ?? 0; // approximate speed for segment
-                const segmentColor = getSpeedColor(segmentSpeed, trip.top_speed);
-                const segment = L.polyline(
-                    [[start.lat, start.lng], [end.lat, end.lng]],
-                    { color: segmentColor, weight: 4, opacity: 0.85 }
-                ).addTo(map);
-                segments.push(segment);
-                layerParts.push(segment);
-            }
-
-            polyline = segments.length ? L.layerGroup(segments).addTo(map) : null;
 
             focusMapOnLocations(layerParts);
         }

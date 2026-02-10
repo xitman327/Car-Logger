@@ -2850,8 +2850,6 @@ function renderPositionList() {
 
         function plotLocationsOnMap(locations, trip) {
             const layerParts = [];
-            
-
 
             // Build colored segments based on speed (0-200 km/h scale)
             const segments = [];
@@ -2899,9 +2897,9 @@ function renderPositionList() {
                 // const endIcon = L.divIcon({ className: 'end-icon' });
                 let marker;
                 if (isFirst) {
-                    marker = L.marker([location.lat, location.lng], { icon: startIcon, zIndexOffset: 1000, riseOnHover: true }).addTo(map);
+                    marker = L.marker([location.lat, location.lng], { icon: startIcon, zIndexOffset: -2000, riseOnHover: true }).addTo(map);
                 } else if (isLast) {
-                    marker = L.marker([location.lat, location.lng], { icon: endIcon, zIndexOffset: 1000, riseOnHover: true }).addTo(map);
+                    marker = L.marker([location.lat, location.lng], { icon: endIcon, zIndexOffset: -3000, riseOnHover: true }).addTo(map);
                 } else {
                     marker = L.circleMarker([location.lat, location.lng], {
                         radius: 6,
@@ -2909,7 +2907,7 @@ function renderPositionList() {
                         fillColor: color,
                         fillOpacity: 0.7,
                         weight: 1,
-                        zIndexOffset: 1000,
+                        zIndexOffset: -1000,
                         riseOnHover: true
                     }).addTo(map);
                 }

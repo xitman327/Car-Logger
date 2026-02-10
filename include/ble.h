@@ -317,7 +317,7 @@ void updateAllCharacteristics()
   setValue(chrCarGpsKmph, String(gps_speed_kmph, 1));
   setValue(chrCarTemp, String(engine_temp, 1));
   setValue(chrCarFuel, String(fuel_level, 1));
-  setValue(chrCarBatt, String(battery_voltage, 2));
+  setValue(chrCarBatt, String(vin, 2));
   setValue(chrCarLpg, lpg_likely ? "1" : "0");
 
   setValue(chrRamFreeKb, String(static_cast<float>(free_heap) / 1024.0f, 1));

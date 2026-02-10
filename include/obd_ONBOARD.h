@@ -24,7 +24,6 @@ bool can_ready = false, can_connected = false;
 bool elm_ready = false, elm_connected = false;
 int obd_use = 1;
 
-
 void update_lpg_state()
 {
     if (!engine_on)
@@ -342,10 +341,25 @@ void loop_elm()
             {
                 // Direct KLine reading - no PID support check
                 float raw_value = KLine.getLiveData(requested_pid_A);
-                if(raw_value >= -4 && raw_value <= -1){
+                if (raw_value == -1)
+                {
+                    digitalWrite(LEDB, LOW);
                     elm_connected = false;
                     log_e("KLine lost connection %1.0f", raw_value);
-                }else if (raw_value != -1)
+                }
+                else if (raw_value == -2)
+                {
+                    log_e("PID %d Unexpected ", requested_pid_A);
+                    digitalWrite(LEDB, !digitalRead(LEDB));
+                    pid_values[pid_request_list_index] = 0.0;
+                }
+                else if (raw_value == -4)
+                {
+                    log_e("PID %d Unsuported ", requested_pid_A);
+                    digitalWrite(LEDB, !digitalRead(LEDB));
+                    pid_values[pid_request_list_index] = 0.0;
+                }
+                else
                 {
                     digitalWrite(LEDB, !digitalRead(LEDB));
                     pid_values[pid_request_list_index] = raw_value;
@@ -375,12 +389,12 @@ void loop_elm()
 
                     pid_request_list_index++;
                 }
-                else
-                {
-                    Serial.print("Error reading PID 0x");
-                    Serial.println(requested_pid_A, HEX);
-                    pid_request_list_index++;
-                }
+                // else
+                // {
+                //     Serial.print("Error reading PID 0x");
+                //     Serial.println(requested_pid_A, HEX);
+                //     pid_request_list_index++;
+                // }
             }
             else
             {

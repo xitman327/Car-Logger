@@ -3,10 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <title>Car Trip Tracker</title>
+    <link rel="icon" type="image/x-icon" href="https://img.icons8.com/fluency/96/track-order.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-iconmaterial/dist/leaflet.icon-material.css">
     <style>
         html, body {
             height: 100%;
@@ -958,6 +961,7 @@
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-iconmaterial@1.1.0/dist/leaflet.icon-material.js"></script>
     
     <script>
 
@@ -1438,7 +1442,8 @@ function renderPositionList() {
             0x6F: 'Engine friction percent torque',
             0x70: 'GM proprietary / reserved (0x70)',
             0xc9: 'Adapter Temperature',
-            0xcA: 'Adapter Humidity'
+            0xcA: 'Adapter Humidity',
+            0xcc: 'Adapter Voltage'
         };
         const BASE_PID_MAX = 0x70;
         const basePids = Array.from({ length: BASE_PID_MAX + 1 }, (_, value) => value);
@@ -2588,7 +2593,7 @@ function renderPositionList() {
             document.getElementById('locations-count').textContent = `${Number(distance).toFixed(2)} km`;
 
             if (window.innerWidth <= 1024) hideSidebar();
-            }
+        }
 
 
         function clearMap() {
@@ -2599,8 +2604,42 @@ function renderPositionList() {
                 polyline = null;
             }
         }
+        
+        function adaptTripJson(trip) {
+            // If already old format → do nothing
+            // if (
+            //     Array.isArray(trip.trip_locations) &&
+            //     typeof trip.trip_locations[0] === "object"
+            // ) {
+            //     console.log("already old format");
+            //     return trip;
+            // }
+
+            if (
+                !Array.isArray(trip.log_objs) ||
+                !Array.isArray(trip.log_objs[0]) ||
+                !Array.isArray(trip.trip_locations)
+            ) {
+                throw new Error("Unsupported trip JSON format");
+            }
+
+            const headers = trip.log_objs[0].map(h =>
+                h.trim().replace(/ /g, "_").replace(/[^\w]/g, "")
+            );
+
+            trip.trip_locations = trip.trip_locations.map(row => {
+                const obj = {};
+                headers.forEach((key, i) => {
+                obj[key] = row[i];
+                });
+                return obj;
+            });
+
+            return trip;
+        }
 
         function processTripLocations(trip) {
+            trip = adaptTripJson(trip);
             const locationsArray = Array.isArray(trip.trip_locations)
                 ? trip.trip_locations
                 : (trip.trip_locations ? Object.values(trip.trip_locations) : []);
@@ -2615,13 +2654,13 @@ function renderPositionList() {
 
             const validLocations = locationsArray
                 .filter(loc => loc !== null && loc !== undefined)
-                .map(normalizeLocation)
+                // .map(normalizeLocation)
                 .filter(hasValidCoordinates);
 
             console.log("Processed locations:", validLocations);
 
             if (validLocations.length > 0) {
-                plotLocationsOnMap(validLocations);
+                plotLocationsOnMap(validLocations, trip);
             } else {
                 console.error("No valid locations after filtering");
                 showNoLocationData();
@@ -2677,26 +2716,170 @@ function renderPositionList() {
             return null;
         }
 
-        function plotLocationsOnMap(locations) {
+        function buildTooltipContent(location, index, trip) {
+            const headers = trip.log_objs?.[0];
+            if (!headers) return "";
+
+            let html = `<b>Point ${index + 1}</b><br>`;
+
+            headers.forEach(rawKey => {
+                const key = rawKey
+                .trim()
+                .replace(/ /g, "_")
+                .replace(/[^\w]/g, "");
+
+                const value = location[key];
+
+                // const FIELD_FORMATTERS = {
+                //     Vehicle_Speed: v => `${v} km/h`,
+                //     Engine_RPM: v => `${parseFloat(v)|0} rpm`,
+                //     Coolant_Temp: v => `${v} °C`,
+                //     Throttle_pos: v => `${parseFloat(v)|0} %`,
+                //     Adapter_Volt: v => `${parseFloat(v).toFixed(1)} V`
+                // };
+
+                const FIELD_FORMATTERS = {
+                    Vehicle_Speed: v => `${v} km/h`,
+                    Engine_RPM: v => `${parseFloat(v)|0} rpm`,
+                    Coolant_Temp: v => `${v} °C`,
+                    Throttle_pos: v => `${parseFloat(v)|0} %`,
+                    Adapter_Volt: v => `${parseFloat(v).toFixed(1)} V`,
+                    Calc_eng_load: v => `${v} %`,
+                    ST_fuel_trim_B1: v => `${v} %`,
+                    LT_fuel_trim_B1: v => `${v} %`,
+                    ST_fuel_trim_B2: v => `${v} %`,
+                    LT_fuel_trim_B2: v => `${v} %`,
+                    Fuel_press: v => `${v} kPa`,
+                    Intake_MAP: v => `${v} kPa`,
+                    Timing_adv: v => `${v} deg`,
+                    Intake_air_T: v => `${v} °C`,
+                    MAF_rate: v => `${v} g/s`,
+                    O2_B1_S1_V: v => `${parseFloat(v).toFixed(2)} V`,
+                    O2_B1_S2_V: v => `${parseFloat(v).toFixed(2)} V`,
+                    O2_B1_S3_V: v => `${parseFloat(v).toFixed(2)} V`,
+                    O2_B1_S4_V: v => `${parseFloat(v).toFixed(2)} V`,
+                    O2_B2_S1_V: v => `${parseFloat(v).toFixed(2)} V`,
+                    O2_B2_S2_V: v => `${parseFloat(v).toFixed(2)} V`,
+                    O2_B2_S3_V: v => `${parseFloat(v).toFixed(2)} V`,
+                    O2_B2_S4_V: v => `${parseFloat(v).toFixed(2)} V`,
+                    Run_time_eng: v => `${v} s`,
+                    Dist_w_MIL: v => `${v} km`,
+                    Fuel_rail_vac: v => `${v} kPa`,
+                    Fuel_rail_dir: v => `${v} kPa`,
+                    Commanded_EGR: v => `${v} %`,
+                    EGR_error: v => `${v} %`,
+                    Cmd_evap_purge: v => `${v} %`,
+                    Fuel_level: v => `${v} %`,
+                    Dist_since_clr: v => `${v} km`,
+                    Evap_vap_press: v => `${v} Pa`,
+                    Baro_press: v => `${v} kPa`,
+                    O2_WB_S1_I: v => `${v} mA`,
+                    O2_WB_S2_I: v => `${v} mA`,
+                    O2_WB_S3_I: v => `${v} mA`,
+                    O2_WB_S4_I: v => `${v} mA`,
+                    O2_WB_S5_I: v => `${v} mA`,
+                    O2_WB_S6_I: v => `${v} mA`,
+                    O2_WB_S7_I: v => `${v} mA`,
+                    O2_WB_S8_I: v => `${v} mA`,
+                    Cat_temp_B1S1: v => `${v} °C`,
+                    Cat_temp_B2S1: v => `${v} °C`,
+                    Cat_temp_B1S2: v => `${v} °C`,
+                    Cat_temp_B2S2: v => `${v} °C`,
+                    ECU_Volt: v => `${parseFloat(v).toFixed(1)} V`,
+                    Abs_load: v => `${v} %`,
+                    Rel_throttle: v => `${v} %`,
+                    Ambient_air_T: v => `${v} °C`,
+                    Abs_thr_pos_B: v => `${v} %`,
+                    Abs_thr_pos_C: v => `${v} %`,
+                    Accel_pos_D: v => `${v} %`,
+                    Accel_pos_E: v => `${v} %`,
+                    Accel_pos_F: v => `${v} %`,
+                    Cmd_throttle: v => `${v} %`,
+                    Time_w_MIL: v => `${v} min`,
+                    Time_since_clr: v => `${v} min`,
+                    Ethanol_pct: v => `${v} %`,
+                    Abs_evap_press: v => `${v} kPa`,
+                    ST_sec_O2_B1: v => `${v} %`,
+                    LT_sec_O2_B1: v => `${v} %`,
+                    ST_sec_O2_B2: v => `${v} %`,
+                    LT_sec_O2_B2: v => `${v} %`,
+                    Fuel_rail_abs: v => `${v} kPa`,
+                    Rel_accel_pos: v => `${v} %`,
+                    Hybrid_batt_pct: v => `${v} %`,
+                    Eng_oil_temp: v => `${v} °C`,
+                    Fuel_inj_time: v => `${v} ms`,
+                    Eng_fuel_rate: v => `${v} L/h`,
+                    Drv_dem_torque: v => `${v} %`,
+                    Act_eng_torque: v => `${v} Nm`,
+                    Eng_ref_torque: v => `${v} Nm`,
+                    Eng_pct_torque: v => `${v} %`,
+                    MAF_sensor_hi: v => `${v} Hz`,
+                    Coolant_T_hi: v => `${v} °C`,
+                    Intake_T_hi: v => `${v} °C`,
+                    Cmd_EGR_err: v => `${v} %`,
+                    Evap_purge: v => `${v} %`,
+                    Turbo_boost: v => `${v} kPa`,
+                    CAC_out_temp: v => `${v} °C`,
+                    Exh_gas_temp: v => `${v} °C`,
+                    Eng_fric_pct: v => `${v} %`,
+                    Adapter_temp: v => `${v} °C`,
+                    Adapter_humid: v => `${v} %`,
+                    Adapter_Aux1: v => `${v}`,
+                    Adapter_Aux2: v => `${v}`,
+                    Adapter_Aux3: v => `${v}`
+                };
+
+                // Skip empty or undefined
+                if (value === undefined || value === null) return;
+
+                // Friendly formatting
+                // let displayValue = value;
+                let displayValue = FIELD_FORMATTERS[key]
+                    ? FIELD_FORMATTERS[key](value)
+                    : value;
+
+                if (key === "time") {
+                displayValue = formatTimestamp(value);
+                }
+
+                html += `${rawKey}: ${displayValue}<br>`;
+            });
+
+            return html;
+        }
+
+        function plotLocationsOnMap(locations, trip) {
             const layerParts = [];
-            const startIcon = L.divIcon({ className: 'start-icon' });
-            const endIcon = L.divIcon({ className: 'end-icon' });
+            
+
 
             // Use circles for intermediate points, start/end icons for endpoints
             locations.forEach((location, index) => {
                 const isFirst = index === 0;
                 const isLast = index === locations.length - 1;
-                const color = getSpeedColor(location.speed);
+                const color = getSpeedColor(location.Vehicle_Speed, trip.top_speed);
                 const speedDisplay = formatSpeed(location.speed);
                 const consumptionDisplay = formatConsumption(location.consumption);
-                const popupContent = `
-                        <b>Point ${index + 1}</b><br>
-                        Time: ${location.time_string || formatTimestamp(location.time)}<br>
-                        Speed: ${speedDisplay}<br>
-                        RPM: ${location.rpm || 0}<br>
-                        Consumption: ${consumptionDisplay}
-                    `;
+                const popupContent = buildTooltipContent(location, index, trip);
 
+                const startIcon = L.IconMaterial.icon({
+                    icon: 'start',
+                    iconColor: '#ffffff',
+                    markerColor: '#4CAF50', // green
+                    outlineColor: '#000000',
+                    outlineWidth: 1
+                });
+
+                const endIcon = L.IconMaterial.icon({
+                    icon: 'stop',
+                    iconColor: '#ffffff',
+                    markerColor: '#F44336', // red
+                    outlineColor: '#000000',
+                    outlineWidth: 1
+                });
+
+                // const startIcon = L.divIcon({ className: 'material-icons' , 'cloud'});
+                // const endIcon = L.divIcon({ className: 'end-icon' });
                 let marker;
                 if (isFirst) {
                     marker = L.marker([location.lat, location.lng], { icon: startIcon }).addTo(map);
@@ -2722,8 +2905,8 @@ function renderPositionList() {
             for (let i = 1; i < locations.length; i++) {
                 const start = locations[i - 1];
                 const end = locations[i];
-                const segmentSpeed = start.speed ?? 0; // approximate speed for segment
-                const segmentColor = getSpeedColor(segmentSpeed);
+                const segmentSpeed = start.Vehicle_Speed ?? 0; // approximate speed for segment
+                const segmentColor = getSpeedColor(segmentSpeed, trip.top_speed);
                 const segment = L.polyline(
                     [[start.lat, start.lng], [end.lat, end.lng]],
                     { color: segmentColor, weight: 4, opacity: 0.85 }
@@ -2737,11 +2920,11 @@ function renderPositionList() {
             focusMapOnLocations(layerParts);
         }
 
-        function getSpeedColor(speed) {
+        function getSpeedColor(speed, top_speed) {
             const value = Number.isFinite(speed) ? speed : 0;
-            const clamped = Math.max(0, Math.min(200, value));
+            const clamped = Math.max(0, Math.min(top_speed , value));
             // Green (120) to Red (0) over 0-200 km/h
-            const hue = 120 - (clamped / 200) * 120;
+            const hue = 120 - (clamped / top_speed) * 120;
             return `hsl(${hue}, 80%, 50%)`;
         }
 

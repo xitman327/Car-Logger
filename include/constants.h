@@ -523,7 +523,7 @@ static inline const char *pid_name(uint8_t pid)
         case 0x02: return "Freeze DTC";
         case 0x03: return "Fuel sys stat";
         case 0x04: return "Calc eng load";
-        case 0x05: return "coolant temp";
+        case 0x05: return "Coolant Temp";
         case 0x06: return "ST fuel trim B1";
         case 0x07: return "LT fuel trim B1";
         case 0x08: return "ST fuel trim B2";
@@ -531,7 +531,7 @@ static inline const char *pid_name(uint8_t pid)
         case 0x0A: return "Fuel press";
         case 0x0B: return "Intake MAP";
         case 0x0C: return "Engine RPM";
-        case 0x0D: return "Vehicle spd";
+        case 0x0D: return "Vehicle Speed";
         case 0x0E: return "Timing adv";
         case 0x0F: return "Intake air T";
         case 0x10: return "MAF rate";
@@ -586,7 +586,7 @@ static inline const char *pid_name(uint8_t pid)
 
         case 0x40: return "Sup PIDs 41-60";
         case 0x41: return "Mon stat drive";
-        case 0x42: return "Ctrl mod volt";
+        case 0x42: return "ECU Volt";
         case 0x43: return "Abs load";
         case 0x44: return "Cmd eq ratio";
         case 0x45: return "Rel throttle";
@@ -635,7 +635,6 @@ static inline const char *pid_name(uint8_t pid)
         case 0x6F: return "Eng fric %";
         case 0x70: return "GM prop/resv";
 
-        // Your custom PIDs (examples — rename as you like)
         case 0xC9: return "Adapter temp";
         case 0xCA: return "Adapter humid";
         case 0xCC: return "Adapter Volt";

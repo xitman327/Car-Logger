@@ -304,8 +304,9 @@ void loop()
     }
 
     if(log_started){
+      digitalWrite(LEDA, !digitalRead(LEDA));
       populate_current_json();
-    }
+    }else if(!log_started && digitalRead(LEDA)){digitalWrite(LEDA, LOW);}
 
 
   }

@@ -380,7 +380,7 @@ void loop_gps()
     last_gps = now - last_gps2;
     last_gps2 = now;
 
-    digitalWrite(LEDA, !digitalRead(LEDA));
+    // digitalWrite(LEDA, !digitalRead(LEDA));
 
     sync_rtc_from_gps(gps);
 

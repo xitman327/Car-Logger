@@ -2882,16 +2882,18 @@ function renderPositionList() {
                 // const endIcon = L.divIcon({ className: 'end-icon' });
                 let marker;
                 if (isFirst) {
-                    marker = L.marker([location.lat, location.lng], { icon: startIcon }).addTo(map);
+                    marker = L.marker([location.lat, location.lng], { icon: startIcon, zIndexOffset: 1000, riseOnHover: true }).addTo(map);
                 } else if (isLast) {
-                    marker = L.marker([location.lat, location.lng], { icon: endIcon }).addTo(map);
+                    marker = L.marker([location.lat, location.lng], { icon: endIcon, zIndexOffset: 1000, riseOnHover: true }).addTo(map);
                 } else {
                     marker = L.circleMarker([location.lat, location.lng], {
                         radius: 6,
                         color,
                         fillColor: color,
                         fillOpacity: 0.7,
-                        weight: 1
+                        weight: 1,
+                        zIndexOffset: 1000,
+                        riseOnHover: true
                     }).addTo(map);
                 }
 

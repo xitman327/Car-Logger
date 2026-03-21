@@ -188,6 +188,7 @@
             margin-bottom: 0;
             -webkit-tap-highlight-color: transparent; /* Remove tap highlight on iOS */
             touch-action: none; /* Prevent browser touch actions */
+            background: #262626 !important; /* Match this to your dark tile color */
         }
         /* Improve marker touch targets */
         .leaflet-marker-icon {
@@ -1081,6 +1082,8 @@
 
         // Initialize map
         let map = L.map('map', {
+            fadeAnimation: true, // Keep this true for smoothness, but...
+            markerZoomAnimation: true,
             scrollWheelZoom: true,  // Disable scroll wheel zoom
             touchZoom: true,        // Enable pinch-to-zoom
             doubleClickZoom: true,  // Enable double-tap zoom

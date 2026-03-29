@@ -41,34 +41,8 @@ namespace
 {
   NimBLEServer *pServer = nullptr;
 
-  NimBLECharacteristic *chrTime = nullptr;
-  NimBLECharacteristic *chrGpsFix = nullptr;
-  NimBLECharacteristic *chrGpsSats = nullptr;
-  NimBLECharacteristic *chrGpsSpeed = nullptr;
-  NimBLECharacteristic *chrGpsPos = nullptr;
-  NimBLECharacteristic *chrWifiStatus = nullptr;
-  NimBLECharacteristic *chrWifiIp = nullptr;
-  NimBLECharacteristic *chrWifiSignal = nullptr;
-  NimBLECharacteristic *chrObdProtocol = nullptr;
-  NimBLECharacteristic *chrUploadStage = nullptr;
-  NimBLECharacteristic *chrUploadInProgress = nullptr;
-  NimBLECharacteristic *chrUploadCurrentIdx = nullptr;
-  NimBLECharacteristic *chrUploadFiles = nullptr;
-  NimBLECharacteristic *chrLogStatus = nullptr;
-  NimBLECharacteristic *chrTripDistance = nullptr;
-  NimBLECharacteristic *chrTripPoints = nullptr;
-  NimBLECharacteristic *chrTripStartTs = nullptr;
-  NimBLECharacteristic *chrCarEngOn = nullptr;
-  NimBLECharacteristic *chrCarRpm = nullptr;
-  NimBLECharacteristic *chrCarKmph = nullptr;
-  NimBLECharacteristic *chrCarGpsKmph = nullptr;
-  NimBLECharacteristic *chrCarTemp = nullptr;
-  NimBLECharacteristic *chrCarFuel = nullptr;
-  NimBLECharacteristic *chrCarBatt = nullptr;
-  NimBLECharacteristic *chrCarLpg = nullptr;
-  NimBLECharacteristic *chrRamFreeKb = nullptr;
-  NimBLECharacteristic *chrRamTotalKb = nullptr;
-  NimBLECharacteristic *chrRamUsedPct = nullptr;
+  NimBLECharacteristic *chrMetrics1 = nullptr;
+  NimBLECharacteristic *chrMetrics2 = nullptr;
   NimBLECharacteristic *pid_rq_list_a = nullptr;
   NimBLECharacteristic *pid_rq_list_b = nullptr;
   NimBLECharacteristic *chrWifi1Ssid = nullptr;
@@ -128,9 +102,10 @@ namespace
 
   class MyServerCallbacks : public NimBLEServerCallbacks
   {
-    void onConnect(NimBLEServer *server) override
+    void onConnect(NimBLEServer *server, ble_gap_conn_desc* desc) override
     {
       deviceConnected = true;
+      server->updateConnParams(desc->conn_handle, 6, 12, 0, 100); // 7.5ms - 15ms interval
       Serial.println("BLE client connected");
     }
 
@@ -282,47 +257,65 @@ namespace
 
 void updateAllCharacteristics()
 {
+  // Metrics part 1
+  JsonDocument metrics1_doc;
+  metrics1_doc["time"] = rtc.getEpoch();
+
+  JsonObject gps = metrics1_doc.createNestedObject("gps");
+  gps["fix"] = gps_location_valid;
+  gps["sats"] = last_sat_count;
+  gps["speed"] = round(gps_speed_kmph * 10) / 10.0;
+  char gps_loc[50];
+  sprintf(gps_loc, "%.6f,%.6f", fix_lat, fix_lng);
+  gps["pos"] = gps_loc;
+
+  JsonObject wifi = metrics1_doc.createNestedObject("wifi");
+  wifi["status"] = WiFi.isConnected();
+  wifi["ip"] = WiFi.isConnected() ? WiFi.localIP().toString() : "0.0.0.0";
+  wifi["signal"] = wifi_signal_percent();
+
+  metrics1_doc["obd_protocol"] = ELMprotocol;
+
+  JsonObject upload = metrics1_doc.createNestedObject("upload");
+  upload["stage"] = uploadStageName(upload_stage);
+  upload["in_progress"] = upload_in_progress;
+  upload["current_idx"] = current_upload_file_index;
+  upload["files"] = num_of_files;
+
+  JsonObject log = metrics1_doc.createNestedObject("log");
+  log["started"] = log_started;
+  log["trip_dist"] = round(trip_distance_km * 100) / 100.0;
+  log["points"] = trip_locations_count;
+  log["start_ts"] = single_trip_data["start_timestamp"] | 0L;
+
+  String metrics1_str;
+  serializeJson(metrics1_doc, metrics1_str);
+  setValue(chrMetrics1, metrics1_str);
+
+  // Metrics part 2
+  JsonDocument metrics2_doc;
+  JsonObject car = metrics2_doc.createNestedObject("car");
+  car["eng_on"] = engine_on;
+  car["rpm"] = round(rpmn);
+  car["kmph"] = round(kmph * 10) / 10.0;
+  car["gps_kmph"] = round(gps_speed_kmph * 10) / 10.0;
+  car["temp"] = round(engine_temp * 10) / 10.0;
+  car["fuel"] = round(fuel_level * 10) / 10.0;
+  car["batt"] = round(battery_voltage * 100) / 100.0;
+  car["vin"] = round(vin * 100) / 100.0;
+  car["lpg"] = lpg_likely;
+  
+
+  JsonObject ram = metrics2_doc.createNestedObject("ram");
   size_t total_heap = ESP.getHeapSize();
   size_t free_heap = ESP.getFreeHeap();
-  uint8_t used_pct = total_heap ? static_cast<uint8_t>(((total_heap - free_heap) * 100) / total_heap) : 0;
+  ram["free_kb"] = round(free_heap / 102.4) / 10.0;
+  ram["total_kb"] = round(total_heap / 102.4) / 10.0;
+  ram["used_pct"] = total_heap ? static_cast<uint8_t>(((total_heap - free_heap) * 100) / total_heap) : 0;
 
-  setValue(chrTime, String(static_cast<long>(rtc.getEpoch())));
-  setValue(chrGpsFix, gps_location_valid ? "1" : "0");
-  setValue(chrGpsSats, String(static_cast<unsigned long>(last_sat_count)));
-  setValue(chrGpsSpeed, String(gps_speed_kmph, 1));
-
-  char gps_loc[50];
-  sprintf(gps_loc, "%f,%f", fix_lat, fix_lng);
-  setValue(chrGpsPos, String(gps_loc));
-
-  setValue(chrWifiStatus, WiFi.isConnected() ? "1" : "0");
-  setValue(chrWifiIp, WiFi.isConnected() ? WiFi.localIP().toString() : String("0.0.0.0"));
-  setValue(chrWifiSignal, String(wifi_signal_percent()));
-
-  setValue(chrObdProtocol, ELMprotocol);
-
-  setValue(chrUploadStage, String(uploadStageName(upload_stage)));
-  setValue(chrUploadInProgress, upload_in_progress ? "1" : "0");
-  setValue(chrUploadCurrentIdx, String(current_upload_file_index));
-  setValue(chrUploadFiles, String(num_of_files));
-
-  setValue(chrLogStatus, log_started ? "1" : "0");
-  setValue(chrTripDistance, String(trip_distance_km, 2));
-  setValue(chrTripPoints, String(static_cast<unsigned long>(trip_locations_count)));
-  setValue(chrTripStartTs, String(static_cast<long>(single_trip_data["start_timestamp"] | 0L)));
-
-  setValue(chrCarEngOn, engine_on ? "1" : "0");
-  setValue(chrCarRpm, String(rpmn, 0));
-  setValue(chrCarKmph, String(kmph, 1));
-  setValue(chrCarGpsKmph, String(gps_speed_kmph, 1));
-  setValue(chrCarTemp, String(engine_temp, 1));
-  setValue(chrCarFuel, String(fuel_level, 1));
-  setValue(chrCarBatt, String(vin, 2));
-  setValue(chrCarLpg, lpg_likely ? "1" : "0");
-
-  setValue(chrRamFreeKb, String(static_cast<float>(free_heap) / 1024.0f, 1));
-  setValue(chrRamTotalKb, String(static_cast<float>(total_heap) / 1024.0f, 1));
-  setValue(chrRamUsedPct, String(used_pct));
+  String metrics2_str;
+  serializeJson(metrics2_doc, metrics2_str);
+  setValue(chrMetrics2, metrics2_str);
 
   pid_rq_list_a->setValue(pid_request_list, 20);
   pid_rq_list_b->setValue(&pid_request_list[20], 20);
@@ -353,52 +346,18 @@ inline void ble_setup()
   
   String ble_name = "Car-Logger_" + WiFi.macAddress();
   NimBLEDevice::init(ble_name.c_str());
-  //   NimBLEDevice::setPower(ESP_PWR_LVL_P9);
+  NimBLEDevice::setPower(ESP_PWR_LVL_P9); // Increase signal strength for faster discovery
   //   NimBLEDevice::setSecurityAuth(false, false, false);
   //   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
-  //   NimBLEDevice::setMTU(160);  // keep modest MTU for browser stacks
+  NimBLEDevice::setMTU(256);  // Increased MTU reduces fragmentation for large JSON metrics
 
   pServer = NimBLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
 
   NimBLEService *pService = pServer->createService(SERVICE_UUID);
 
-  chrTime = createReadCharacteristic(pService, "19b10001-e8f2-537e-4f6c-d104768a1214");
-  chrGpsFix = createReadCharacteristic(pService, "19b10002-e8f2-537e-4f6c-d104768a1214");
-  chrGpsSats = createReadCharacteristic(pService, "19b10003-e8f2-537e-4f6c-d104768a1214");
-  chrGpsSpeed = createReadCharacteristic(pService, "19b10004-e8f2-537e-4f6c-d104768a1214");
-
-  chrWifiStatus = createReadCharacteristic(pService, "19b10005-e8f2-537e-4f6c-d104768a1214");
-  chrWifiIp = createReadCharacteristic(pService, "19b10006-e8f2-537e-4f6c-d104768a1214");
-  chrWifiSignal = createReadCharacteristic(pService, "19b10007-e8f2-537e-4f6c-d104768a1214");
-
-  chrObdProtocol = createReadCharacteristic(pService, "19b10008-e8f2-537e-4f6c-d104768a1214");
-
-  chrUploadStage = createReadCharacteristic(pService, "19b10009-e8f2-537e-4f6c-d104768a1214");
-  chrUploadInProgress = createReadCharacteristic(pService, "19b1000a-e8f2-537e-4f6c-d104768a1214");
-  chrUploadCurrentIdx = createReadCharacteristic(pService, "19b1000b-e8f2-537e-4f6c-d104768a1214");
-  chrUploadFiles = createReadCharacteristic(pService, "19b1000c-e8f2-537e-4f6c-d104768a1214");
-
-  chrLogStatus = createReadCharacteristic(pService, "19b1000d-e8f2-537e-4f6c-d104768a1214");
-
-  chrTripDistance = createReadCharacteristic(pService, "19b1000e-e8f2-537e-4f6c-d104768a1214");
-  chrTripPoints = createReadCharacteristic(pService, "19b1000f-e8f2-537e-4f6c-d104768a1214");
-  chrTripStartTs = createReadCharacteristic(pService, "19b10010-e8f2-537e-4f6c-d104768a1214");
-
-  chrCarEngOn = createReadCharacteristic(pService, "19b10011-e8f2-537e-4f6c-d104768a1214");
-  chrCarRpm = createReadCharacteristic(pService, "19b10012-e8f2-537e-4f6c-d104768a1214");
-  chrCarKmph = createReadCharacteristic(pService, "19b10013-e8f2-537e-4f6c-d104768a1214");
-  chrCarGpsKmph = createReadCharacteristic(pService, "19b10014-e8f2-537e-4f6c-d104768a1214");
-  chrCarTemp = createReadCharacteristic(pService, "19b10015-e8f2-537e-4f6c-d104768a1214");
-  chrCarFuel = createReadCharacteristic(pService, "19b10016-e8f2-537e-4f6c-d104768a1214");
-  chrCarBatt = createReadCharacteristic(pService, "19b10017-e8f2-537e-4f6c-d104768a1214");
-  chrCarLpg = createReadCharacteristic(pService, "19b10018-e8f2-537e-4f6c-d104768a1214");
-
-  chrRamFreeKb = createReadCharacteristic(pService, "19b10019-e8f2-537e-4f6c-d104768a1214");
-  chrRamTotalKb = createReadCharacteristic(pService, "19b1001a-e8f2-537e-4f6c-d104768a1214");
-  chrRamUsedPct = createReadCharacteristic(pService, "19b1001b-e8f2-537e-4f6c-d104768a1214");
-
-  chrGpsPos = createReadCharacteristic(pService, "19b1001c-e8f2-537e-4f6c-d104768a1214");
+  chrMetrics1 = createReadCharacteristic(pService, "19b10001-e8f2-537e-4f6c-d104768a1214");
+  chrMetrics2 = createReadCharacteristic(pService, "19b10002-e8f2-537e-4f6c-d104768a1214");
 
   pid_rq_list_a = createReadWriteNotifyCharacteristic(pService, "19b1001d-e8f2-537e-4f6c-d104768a1214");
   pid_rq_list_b = createReadWriteNotifyCharacteristic(pService, "19b1001e-e8f2-537e-4f6c-d104768a1214");
@@ -448,6 +407,11 @@ inline void ble_setup()
 
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
+  pAdvertising->setMinInterval(32); // 20ms advertising interval
+  pAdvertising->setMaxInterval(64); // 40ms advertising interval
+  // Hint to the client to use fast connection parameters
+  pAdvertising->setMinPreferred(0x06); // 7.5ms
+  pAdvertising->setMaxPreferred(0x12); // 22.5ms
   pAdvertising->setScanResponse(true);
   NimBLEDevice::startAdvertising();
 }

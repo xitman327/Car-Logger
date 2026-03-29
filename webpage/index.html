@@ -277,7 +277,9 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+            opacity: 0.9;
+            background-color: #c5c5c593;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.548);
             border-radius: 10px;
             gap: 4px;
             transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
@@ -736,15 +738,19 @@
             <div class="stats-card">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <div>
-                        <div class="metric-label">Device</div>
+                        <div class="metric-label">
+                            Device
+                            <span class="badge bg-secondary" id="ble-connection-badge">Idle</span>
+                        </div>
                         <div class="metric-value" id="ble-device-name">None</div>
                     </div>
-                    <span class="badge bg-secondary" id="ble-connection-badge">Idle</span>
+                    
+                    
                 </div>
-                <div class="small text-muted mb-1">Service + characteristic UUIDs are set in code.</div>
+                <!-- <div class="small text-muted mb-1">Service + characteristic UUIDs are set in code.</div>
                 <div class="alert alert-warning p-2 py-1 small mb-0">
                     <strong>Android:</strong> use Chrome over HTTPS, enable Bluetooth & Location, then tap Connect.
-                </div>
+                </div> -->
             </div>
 
             <div class="stats-card">
@@ -755,51 +761,40 @@
                 <div class="diag-grid">
                     <div class="diag-card">
                         <h6>Time</h6>
-                        <div class="diag-label">System clock</div>
                         <div class="diag-value" id="diag-time">--</div>
                     </div>
                     <div class="diag-card">
                         <h6>GPS</h6>
-                        <div class="diag-label">Fix / Sats</div>
                         <div class="diag-value"><span id="diag-gps-fix">--</span> | sats <span id="diag-gps-sats">--</span></div>
-                        <div class="diag-label mt-1">Speed</div>
-                        <div class="diag-value" id="diag-gps-speed">--</div>
+                        <div class="diag-value">Speed: <span class="diag-value" id="diag-gps-speed">--</span></div> 
                     </div>
                     <div class="diag-card">
                         <h6>WiFi</h6>
-                        <div class="diag-label">Status</div>
-                        <div class="diag-value" id="diag-wifi">--</div>
-                        <div class="diag-label mt-1">IP / Signal</div>
+                        <div class="diag-label">Status <span class="diag-value" id="diag-wifi">--</span></div>
                         <div class="diag-value"><span id="diag-ip">--</span> | <span id="diag-signal">--</span></div>
                     </div>
                     <div class="diag-card">
                         <h6>OBD</h6>
-                        <div class="diag-label">Protocol</div>
                         <div class="diag-value" id="diag-obd">--</div>
                     </div>
                     <div class="diag-card">
                         <h6>Upload</h6>
-                        <div class="diag-label">Stage / Files</div>
                         <div class="diag-value" id="diag-upload">--</div>
                     </div>
                     <div class="diag-card">
-                        <h6>Log</h6>
-                        <div class="diag-label">Status / Points</div>
+                        <h6>Log</h6>    
                         <div class="diag-value" id="diag-log">--</div>
                     </div>
                     <div class="diag-card">
                         <h6>Car</h6>
-                        <div class="diag-label">Engine / Speed / Temp</div>
                         <div class="diag-value" id="diag-car">--</div>
                     </div>
                     <div class="diag-card">
-                        <h6>Battery</h6>
-                        <div class="diag-label">Vehicle battery</div>
+                        <h6>Voltage</h6>
                         <div class="diag-value" id="diag-batt">--</div>
                     </div>
                     <div class="diag-card">
                         <h6>RAM</h6>
-                        <div class="diag-label">Usage</div>
                         <div class="diag-value" id="diag-ram">--</div>
                     </div>
                 </div>
@@ -810,10 +805,11 @@
             <div class="d-flex justify-content-between align-items-start mb-3">
                 <div>
                     <h5 class="mb-0">PID Configuration</h5>
-                    <p class="mb-0 text-muted small">pid_request_list (40 bytes)</p>
+                    <span id="ble-status-dot-pid" class="status-dot bg-secondary"></span>
+                    <span id="ble-status-text-pid">Disconnected</span>
+                    <!-- <p class="mb-0 text-muted small">pid_request_list (40 bytes)</p> -->
                 </div>
                 <div class="d-flex align-items-center gap-2">
-                    <span class="badge bg-light text-secondary border" id="pid-count-badge">0/40</span>
                     <div class="btn-group">
                         <button id="ble-connect-btn-config" class="btn btn-primary btn-sm">Connect</button>
                         <button id="ble-disconnect-btn-config" class="btn btn-outline-secondary btn-sm" disabled>Disconnect</button>
@@ -834,6 +830,7 @@
             <div class="stats-card">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <h6 class="mb-0 text-muted">Current list</h6>
+                    <span class="badge bg-light text-secondary border" id="pid-count-badge">0/40</span>
                     <div class="btn-group btn-group-sm">
                         <button class="btn btn-outline-secondary" id="pid-refresh-btn">Refresh</button>
                         <button class="btn btn-outline-danger" id="pid-clear-btn">Clear</button>
@@ -1088,8 +1085,12 @@
             touchZoom: true,        // Enable pinch-to-zoom
             doubleClickZoom: true,  // Enable double-tap zoom
             boxZoom: true,         // Enable shift-drag zoom box
-            keyboard: true        // Disable keyboard navigation (optional)
+            keyboard: true,        // Disable keyboard navigation (optional)
+            zoomControl: false
         }).setView([0, 0], 2);
+        L.control.zoom({
+            position: 'bottomright'
+        }).addTo(map);
 
         const carIcon = L.divIcon({
             className: 'car-icon',
@@ -1322,16 +1323,16 @@ function renderPositionList() {
         let bleDevice = null;
         let bleServer = null;
         let bleService = null;
-        let bleCharacteristic = null;
         let diagnosticPollTimer = null;
         let diagnosticReading = false;
         const isAndroid = /Android/i.test(navigator.userAgent);
         const bleServiceUuid = '19b10000-e8f2-537e-4f6c-d104768a1214';
         const bleTextDecoder = new TextDecoder();
         const bleTextEncoder = new TextEncoder();
-        const defaultNotifyCharacteristicUuid = '19b10001-e8f2-537e-4f6c-d104768a1214'; // set to your notify characteristic
         const PID_CHUNK0_UUID = '19b1001d-e8f2-537e-4f6c-d104768a1214';
         const PID_CHUNK1_UUID = '19b1001e-e8f2-537e-4f6c-d104768a1214';
+        // Global characteristic cache
+        let charCache = {};
         const PID_NAMES = {
             0x00: 'Supported PIDs 00-1F',
             0x01: 'Monitor status since DTC clear',
@@ -1466,44 +1467,8 @@ function renderPositionList() {
         let pidChunk1 = null;
         let pidRequestList = new Uint8Array(40);
         let pidList = [];
-        // One characteristic per metric (fill in your device UUIDs)
-        const bleCharacteristicUuids = {
-            time:              '19b10001-e8f2-537e-4f6c-d104768a1214',
-            gpsFix:            '19b10002-e8f2-537e-4f6c-d104768a1214',
-            gpsSats:           '19b10003-e8f2-537e-4f6c-d104768a1214',
-            gpsSpeed:          '19b10004-e8f2-537e-4f6c-d104768a1214',
-
-            wifiStatus:        '19b10005-e8f2-537e-4f6c-d104768a1214',
-            wifiIp:            '19b10006-e8f2-537e-4f6c-d104768a1214',
-            wifiSignal:        '19b10007-e8f2-537e-4f6c-d104768a1214',
-
-            obdProtocol:       '19b10008-e8f2-537e-4f6c-d104768a1214',
-
-            uploadStage:       '19b10009-e8f2-537e-4f6c-d104768a1214',
-            uploadInProgress:  '19b1000a-e8f2-537e-4f6c-d104768a1214',
-            uploadCurrentIdx:  '19b1000b-e8f2-537e-4f6c-d104768a1214',
-            uploadFiles:       '19b1000c-e8f2-537e-4f6c-d104768a1214',
-
-            logStatus:         '19b1000d-e8f2-537e-4f6c-d104768a1214',
-
-            tripDistance:      '19b1000e-e8f2-537e-4f6c-d104768a1214',
-            tripPoints:        '19b1000f-e8f2-537e-4f6c-d104768a1214',
-            tripStartTs:       '19b10010-e8f2-537e-4f6c-d104768a1214',
-
-            carEngOn:          '19b10011-e8f2-537e-4f6c-d104768a1214',
-            carRpm:            '19b10012-e8f2-537e-4f6c-d104768a1214',
-            carKmph:           '19b10013-e8f2-537e-4f6c-d104768a1214',
-            carGpsKmph:        '19b10014-e8f2-537e-4f6c-d104768a1214',
-            carTemp:           '19b10015-e8f2-537e-4f6c-d104768a1214',
-            carFuel:           '19b10016-e8f2-537e-4f6c-d104768a1214',
-            carBatt:           '19b10017-e8f2-537e-4f6c-d104768a1214',
-            carLpg:            '19b10018-e8f2-537e-4f6c-d104768a1214',
-
-            ramFreeKb:         '19b10019-e8f2-537e-4f6c-d104768a1214',
-            ramTotalKb:        '19b1001a-e8f2-537e-4f6c-d104768a1214',
-            ramUsedPct:        '19b1001b-e8f2-537e-4f6c-d104768a1214',
-            gpsPos:            '19b1001c-e8f2-537e-4f6c-d104768a1214'
-        };
+        const METRICS1_UUID = '19b10001-e8f2-537e-4f6c-d104768a1214';
+        const METRICS2_UUID = '19b10002-e8f2-537e-4f6c-d104768a1214';
         const settingsCharacteristicUuids = {
             wifi: [
                 { ssid: '19b1001f-e8f2-537e-4f6c-d104768a1214', pass: '19b10020-e8f2-537e-4f6c-d104768a1214', enabled: '19b10021-e8f2-537e-4f6c-d104768a1214' },
@@ -1559,6 +1524,7 @@ function renderPositionList() {
             fuel: null,
             batt: null,
             lpg: null,
+            vin: null,
             ramFreeKb: null,
             ramTotalKb: null,
             ramUsedPct: null
@@ -1577,6 +1543,7 @@ function renderPositionList() {
             log: '--',
             car: '--',
             batt: '--',
+            vin: '--',
             ram: '--'
         };
 
@@ -1674,11 +1641,15 @@ function renderPositionList() {
         function setBleStatus(text, tone = 'secondary') {
             const statusText = document.getElementById('ble-status-text');
             const statusDot = document.getElementById('ble-status-dot');
+            const statusText_pid = document.getElementById('ble-status-text-pid');
+            const statusDot_pid = document.getElementById('ble-status-dot-pid');
             const badge = document.getElementById('ble-connection-badge');
             const toneClass = tone === 'warning' ? 'bg-warning text-dark' : `bg-${tone}`;
 
             if (statusText) statusText.textContent = text;
             if (statusDot) statusDot.className = `status-dot ${toneClass}`;
+            if (statusText_pid) statusText_pid.textContent = text;
+            if (statusDot_pid) statusDot_pid.className = `status-dot ${toneClass}`;
             if (badge) badge.className = `badge ${toneClass}`;
             if (badge) badge.textContent = text;
         }
@@ -2011,7 +1982,7 @@ function renderPositionList() {
                 const lastNonZero = entries.reduce((acc, val, idx) => val !== 0 ? idx : acc, -1);
                 pidList = lastNonZero === -1 ? [] : entries.slice(0, lastNonZero + 1);
                 renderPidList();
-                logBle(`PID list read (${pidList.length}): ${toHex(combined)}`);
+                console.log(`PID list read (${pidList.length})`);
             } catch (err) {
                 console.warn('PID list read failed', err);
                 logBle(`PID list read failed: ${err.message}`);
@@ -2063,16 +2034,18 @@ function renderPositionList() {
             }
         }
 
+        async function ensureCharacteristic(uuid) {
+            if (charCache[uuid]) return charCache[uuid];
+            if (!bleService) throw new Error('Service not found');
+            const char = await bleService.getCharacteristic(uuid);
+            charCache[uuid] = char;
+            return char;
+        }
+
         async function connectBle() {
             const serviceUuid = bleServiceUuid;
-            const characteristicUuid = defaultNotifyCharacteristicUuid;
-
             if (!navigator.bluetooth) {
                 alert('Web Bluetooth API is not supported in this browser.');
-                return;
-            }
-            if (!serviceUuid || !characteristicUuid) {
-                alert('Please provide the Service UUID (and set notify UUID in code).');
                 return;
             }
 
@@ -2109,24 +2082,18 @@ function renderPositionList() {
 
                 bleService = await bleServer.getPrimaryService(serviceUuid);
 
-                // Prefer explicit characteristic, else pick the first readable characteristic
-                try {
-                    bleCharacteristic = await bleService.getCharacteristic(characteristicUuid);
-                } catch (e) {
-                    const allChars = await bleService.getCharacteristics();
-                    bleCharacteristic = allChars.find(c => c.properties?.read) || allChars[0];
-                    logBle(`Readable characteristic fallback: ${bleCharacteristic?.uuid || 'none'}`);
-                }
-
                 document.getElementById('ble-device-name').textContent = bleDevice.name || 'Unnamed device';
                 setBleStatus('Connected', 'success');
                 setBleControls({ connected: true });
-                logBle('Connected to device');
+                logBle('Connected. Fetching data...');
 
-                // Attempt to read diagnostic values from individual characteristics (if UUIDs are set)
-                fetchDiagnosticsFromCharacteristics(serviceUuid);
-                startDiagnosticPolling(serviceUuid);
-                await syncPidListFromDevice();
+                // Parallelize initial discovery and data fetching
+                await Promise.all([
+                    fetchDiagnosticsFromCharacteristics(),
+                    syncPidListFromDevice()
+                ]);
+                
+                startDiagnosticPolling();
             } catch (error) {
                 console.error('BLE connect error', error);
                 logBle(`Connection failed: ${error.message}`);
@@ -2134,26 +2101,15 @@ function renderPositionList() {
                 setBleControls({ connected: false });
                 // Drop cached service so next attempt re-requests
                 bleService = null;
-                bleCharacteristic = null;
                 stopDiagnosticPolling();
             }
         }
-
         async function disconnectBle() {
-            try {
-                if (bleCharacteristic) {
-                    await bleCharacteristic.stopNotifications();
-                }
-            } catch (err) {
-                console.warn('Error stopping notifications', err);
-            }
-
             if (bleDevice && bleDevice.gatt.connected) {
                 bleDevice.gatt.disconnect();
             }
 
             bleDevice = null;
-            bleCharacteristic = null;
             bleServer = null;
             bleService = null;
             stopDiagnosticPolling();
@@ -2166,9 +2122,9 @@ function renderPositionList() {
 
         function handleBleDisconnect() {
             logBle('Device disconnected');
+            charCache = {};
             setBleStatus('Disconnected', 'secondary');
             setBleControls({ connected: false });
-            bleCharacteristic = null;
             bleServer = null;
             bleDevice = null;
             bleService = null;
@@ -2178,28 +2134,11 @@ function renderPositionList() {
         }
 
         async function sendBleCommand(command) {
-            if (!bleCharacteristic || !bleDevice || !bleDevice.gatt.connected) {
+            if (!bleService || !bleDevice || !bleDevice.gatt.connected) {
                 logBle('Not connected');
                 return;
             }
-
-            const clean = (command || '').trim();
-            if (!clean) return;
-
-            try {
-                const data = bleTextEncoder.encode(clean + '\n');
-                if (bleCharacteristic.writeValueWithoutResponse) {
-                    await bleCharacteristic.writeValueWithoutResponse(data);
-                } else {
-                    await bleCharacteristic.writeValue(data);
-                }
-                logBle(`TX: ${clean}`);
-                const inputEl = document.getElementById('ble-send-input');
-                if (inputEl) inputEl.value = '';
-            } catch (error) {
-                console.error('Send error', error);
-                logBle(`Send failed: ${error.message}`);
-            }
+            logBle('sendBleCommand is not implemented with the new characteristic structure.');
         }
 
         // Parse and render diagnostic payloads (Random Nerd Tutorials style) from text content
@@ -2237,6 +2176,7 @@ function renderPositionList() {
                     diagnosticPieces.temp = line.match(/temp:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.temp;
                     diagnosticPieces.fuel = line.match(/fuel:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.fuel;
                     diagnosticPieces.batt = line.match(/batt:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.batt;
+                    diagnosticPieces.vin = line.match(/vin:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.vin;
                     diagnosticPieces.lpg = line.match(/lpg:([0-9]+)/i)?.[1] || diagnosticPieces.lpg;
                 } else if (line.startsWith('RAM')) {
                     diagnosticPieces.ramFreeKb = line.match(/([0-9.,]+)KB free/i)?.[1]?.replace(',', '.') || diagnosticPieces.ramFreeKb;
@@ -2261,7 +2201,7 @@ function renderPositionList() {
                 'diag-upload': diagnosticData.upload,
                 'diag-log': diagnosticData.log,
                 'diag-car': diagnosticData.car,
-                'diag-batt': diagnosticData.batt,
+                'diag-batt': diagnosticData.vin,
                 'diag-ram': diagnosticData.ram
             };
             Object.entries(mapVals).forEach(([id, val]) => {
@@ -2281,68 +2221,84 @@ function renderPositionList() {
         }
 
         // Read individual characteristics sequentially (one by one) and render
-        async function fetchDiagnosticsFromCharacteristics(serviceUuid) {
+        async function fetchDiagnosticsFromCharacteristics() {
             if (!bleService || diagnosticReading) return;
             diagnosticReading = true;
 
-            const entries = [
-                ['time', bleCharacteristicUuids.time],
-                ['gpsFix', bleCharacteristicUuids.gpsFix],
-                ['gpsSats', bleCharacteristicUuids.gpsSats],
-                ['gpsSpeed', bleCharacteristicUuids.gpsSpeed],
-                ['gpsPos', bleCharacteristicUuids.gpsPos],
-                ['wifiStatus', bleCharacteristicUuids.wifiStatus],
-                ['ip', bleCharacteristicUuids.wifiIp],
-                ['signal', bleCharacteristicUuids.wifiSignal],
-                ['obdProtocol', bleCharacteristicUuids.obdProtocol],
-                ['uploadStage', bleCharacteristicUuids.uploadStage],
-                ['uploadInProgress', bleCharacteristicUuids.uploadInProgress],
-                ['uploadCurrentIdx', bleCharacteristicUuids.uploadCurrentIdx],
-                ['uploadFiles', bleCharacteristicUuids.uploadFiles],
-                ['logStatus', bleCharacteristicUuids.logStatus],
-                ['tripDistance', bleCharacteristicUuids.tripDistance],
-                ['points', bleCharacteristicUuids.tripPoints],
-                ['startTs', bleCharacteristicUuids.tripStartTs],
-                ['carEngOn', bleCharacteristicUuids.carEngOn],
-                ['rpm', bleCharacteristicUuids.carRpm],
-                ['kmph', bleCharacteristicUuids.carKmph],
-                ['gpsKmph', bleCharacteristicUuids.carGpsKmph],
-                ['temp', bleCharacteristicUuids.carTemp],
-                ['fuel', bleCharacteristicUuids.carFuel],
-                ['batt', bleCharacteristicUuids.carBatt],
-                ['lpg', bleCharacteristicUuids.carLpg],
-                ['ramFreeKb', bleCharacteristicUuids.ramFreeKb],
-                ['ramTotalKb', bleCharacteristicUuids.ramTotalKb],
-                ['ramUsedPct', bleCharacteristicUuids.ramUsedPct]
-            ];
-
             try {
-                for (const [key, uuid] of entries) {
-                    if (!uuid || !uuid.trim()) continue;
-                    try {
-                        const c = await bleService.getCharacteristic(uuid.trim());
-                        const v = await c.readValue();
-                        diagnosticPieces[key] = bleTextDecoder.decode(v).trim() ?? diagnosticPieces[key];
-                    } catch (err) {
-                        console.warn('Read failed for', key, uuid, err);
-                    }
-                    await delay(50);
+                // Discovery is cached, read values in parallel
+                const [c1, c2] = await Promise.all([
+                    ensureCharacteristic(METRICS1_UUID),
+                    ensureCharacteristic(METRICS2_UUID)
+                ]);
+
+                const [v1, v2] = await Promise.all([
+                    c1.readValue(),
+                    c2.readValue()
+                ]);
+
+                const data1 = JSON.parse(bleTextDecoder.decode(v1));
+                const data2 = JSON.parse(bleTextDecoder.decode(v2));
+
+                diagnosticPieces.time = data1.time;
+                if (data1.gps) {
+                    diagnosticPieces.gpsFix = data1.gps.fix ? '1' : '0';
+                    diagnosticPieces.gpsSats = data1.gps.sats;
+                    diagnosticPieces.gpsSpeed = data1.gps.speed;
+                    diagnosticPieces.gpsPos = data1.gps.pos;
+                }
+                if (data1.wifi) {
+                    diagnosticPieces.wifiStatus = data1.wifi.status ? '1' : '0';
+                    diagnosticPieces.ip = data1.wifi.ip;
+                    diagnosticPieces.signal = data1.wifi.signal + '%';
+                }
+                diagnosticPieces.obdProtocol = data1.obd_protocol;
+                if (data1.upload) {
+                    diagnosticPieces.uploadStage = data1.upload.stage;
+                    diagnosticPieces.uploadInProgress = data1.upload.in_progress ? '1' : '0';
+                    diagnosticPieces.uploadCurrentIdx = data1.upload.current_idx;
+                    diagnosticPieces.uploadFiles = data1.upload.files;
+                }
+                if (data1.log) {
+                    diagnosticPieces.logStatus = data1.log.started ? '1' : '0';
+                    diagnosticPieces.tripDistance = data1.log.trip_dist;
+                    diagnosticPieces.points = data1.log.points;
+                    diagnosticPieces.startTs = data1.log.start_ts;
+                }
+
+                if (data2.car) {
+                    diagnosticPieces.carEngOn = data2.car.eng_on ? '1' : '0';
+                    diagnosticPieces.rpm = data2.car.rpm;
+                    diagnosticPieces.kmph = data2.car.kmph;
+                    diagnosticPieces.gpsKmph = data2.car.gps_kmph;
+                    diagnosticPieces.temp = data2.car.temp;
+                    diagnosticPieces.fuel = data2.car.fuel;
+                    diagnosticPieces.batt = data2.car.batt;
+                    diagnosticPieces.vin = data2.car.vin;
+                    diagnosticPieces.lpg = data2.car.lpg ? '1' : '0';
+                }
+                if (data2.ram) {
+                    diagnosticPieces.ramFreeKb = data2.ram.free_kb;
+                    diagnosticPieces.ramTotalKb = data2.ram.total_kb;
+                    diagnosticPieces.ramUsedPct = data2.ram.used_pct;
                 }
 
                 composeDiagnosticData();
                 renderDiagnosticData();
+            } catch (err) {
+                console.warn('Failed to fetch or parse diagnostics JSON', err);
             } finally {
                 diagnosticReading = false;
             }
         }
 
-        function startDiagnosticPolling(serviceUuid) {
+        function startDiagnosticPolling() {
             stopDiagnosticPolling();
             diagnosticPollTimer = setInterval(() => {
                 if (bleDevice && bleDevice.gatt && bleDevice.gatt.connected) {
-                    fetchDiagnosticsFromCharacteristics(serviceUuid);
+                    fetchDiagnosticsFromCharacteristics();
                 }
-            }, 100);
+            }, 250);
         }
 
         function stopDiagnosticPolling() {
@@ -2400,9 +2356,10 @@ function renderPositionList() {
 
             const car = diagnosticPieces;
             if (car.rpm || car.kmph || car.gpsKmph || car.temp || car.fuel || car.lpg || car.carEngOn) {
-                diagnosticData.car = `eng:${car.carEngOn ?? '-'} rpm:${car.rpm ?? '-'} kmph:${car.kmph ?? '-'} gps:${car.gpsKmph ?? '-'} temp:${car.temp ?? '-'}C fuel:${car.fuel ?? '-'}% lpg:${car.lpg ?? '-'}`;
+                diagnosticData.car = `eng:${car.carEngOn ?? '-'} rpm:${car.rpm ?? '-'} kmph:${car.kmph ?? '-'} temp:${car.temp ?? '-'}C fuel:${car.fuel ?? '-'}% lpg:${car.lpg ?? '-'}`;
             }
             if (car.batt) diagnosticData.batt = `${car.batt} V`;
+            if (car.vin) diagnosticData.vin = `${car.vin} V`;
 
             if (car.ramFreeKb || car.ramTotalKb || car.ramUsedPct) {
                 diagnosticData.ram = `${car.ramFreeKb ?? '-'}KB / ${car.ramTotalKb ?? '-'}KB (${car.ramUsedPct ?? '-'}% used)`;

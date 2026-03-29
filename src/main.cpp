@@ -268,8 +268,8 @@ void loop()
 
     switch(trip_start_condition){
       case ADAPT_VOLTAGE:
-        if(battery_voltage > charging_voltage && !log_started){trip_start();}else
-        if(battery_voltage < charging_voltage && log_started){trip_end();}
+        if(vin > charging_voltage && !log_started){trip_start();}else
+        if(vin < charging_voltage && log_started){trip_end();}
       break;
       case OBD_VOLTAGE:
         if(battery_voltage > charging_voltage && !log_started){trip_start();}else

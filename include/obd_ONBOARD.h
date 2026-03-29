@@ -151,7 +151,7 @@ void setup_elm()
         KLine.setChecksumType(2);
 
         elm_ready = true;
-        Serial.println("ELM began");
+        log_i("ELM began");
     }
     else if (obd_use == 2)
     {
@@ -283,7 +283,7 @@ void loop_elm()
             nodata_count++;
             if (nodata_count > 10)
             {
-                setup_elm();
+                // setup_elm();
                 nodata_count = 0;
             }
         }
@@ -330,9 +330,7 @@ void loop_elm()
                     break;
 
                 default:
-                    Serial.print("Requested Sensor ");
-                    Serial.print(requested_pid_A, HEX);
-                    Serial.println(" Not Supported");
+                    log_e("requested sensor %d not supported", requested_pid_A);
                     break;
                 }
                 pid_request_list_index++;
@@ -389,12 +387,6 @@ void loop_elm()
 
                     pid_request_list_index++;
                 }
-                // else
-                // {
-                //     Serial.print("Error reading PID 0x");
-                //     Serial.println(requested_pid_A, HEX);
-                //     pid_request_list_index++;
-                // }
             }
             else
             {

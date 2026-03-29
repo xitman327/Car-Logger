@@ -1100,7 +1100,7 @@
         });
         let liveCarMarker = null;
         let lastCarLocationTs = 0;
-        const LIVE_CAR_UPDATE_INTERVAL = 2000;
+        const LIVE_CAR_UPDATE_INTERVAL = 1000;
 
         // Add tile layer
         setMapTheme(localStorage.getItem('ui_theme') || 'system');
@@ -2142,51 +2142,51 @@ function renderPositionList() {
         }
 
         // Parse and render diagnostic payloads (Random Nerd Tutorials style) from text content
-        function ingestDiagnosticText(text) {
-            if (!text || !text.includes('DEBUG DASHBOARD')) return;
-            const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-            lines.forEach(line => {
-                if (line.startsWith('Time:')) {
-                    diagnosticPieces.time = line.replace('Time:', '').trim();
-                } else if (line.startsWith('GPS')) {
-                    diagnosticPieces.gpsFix = (line.match(/GPS\s*:\s*([^|]+)/i)?.[1] || '').trim();
-                    diagnosticPieces.gpsSats = line.match(/sats:([0-9]+)/i)?.[1] || diagnosticPieces.gpsSats;
-                    diagnosticPieces.gpsSpeed = line.match(/speed:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.gpsSpeed;
-                } else if (line.startsWith('WiFi')) {
-                    diagnosticPieces.wifiStatus = (line.match(/WiFi:\s*([^|]+)/i)?.[1] || '').trim();
-                    diagnosticPieces.ip = (line.match(/IP:([^|]+)/i)?.[1] || '').trim();
-                    diagnosticPieces.signal = line.match(/signal:([0-9]+%)/i)?.[1] || diagnosticPieces.signal;
-                } else if (line.startsWith('OBD')) {
-                    diagnosticPieces.obdProtocol = (line.match(/protocol:([\w-]*)/i)?.[1] || '').trim() || diagnosticPieces.obdProtocol;
-                } else if (line.startsWith('Upload')) {
-                    diagnosticPieces.uploadStage = line.match(/stage:([^|]+)/i)?.[1]?.trim() || diagnosticPieces.uploadStage;
-                    diagnosticPieces.uploadInProgress = line.match(/in_progress:([0-9]+)/i)?.[1] || diagnosticPieces.uploadInProgress;
-                    diagnosticPieces.uploadCurrentIdx = line.match(/current_idx:([-0-9]+)/i)?.[1] || diagnosticPieces.uploadCurrentIdx;
-                    diagnosticPieces.uploadFiles = line.match(/files:([0-9]+)/i)?.[1] || diagnosticPieces.uploadFiles;
-                } else if (line.startsWith('Log')) {
-                    diagnosticPieces.logStatus = line.match(/Log\s*:([^|]+)/i)?.[1]?.trim() || diagnosticPieces.logStatus;
-                    diagnosticPieces.tripDistance = line.match(/trip_dist:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.tripDistance;
-                    diagnosticPieces.points = line.match(/points:([0-9]+)/i)?.[1] || diagnosticPieces.points;
-                    diagnosticPieces.startTs = line.match(/start_ts:([0-9]+)/i)?.[1] || diagnosticPieces.startTs;
-                } else if (line.startsWith('Car')) {
-                    diagnosticPieces.carEngOn = line.match(/eng_on:([0-9]+)/i)?.[1] || diagnosticPieces.carEngOn;
-                    diagnosticPieces.rpm = line.match(/rpm:([0-9]+)/i)?.[1] || diagnosticPieces.rpm;
-                    diagnosticPieces.kmph = line.match(/kmph:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.kmph;
-                    diagnosticPieces.gpsKmph = line.match(/gps_kmph:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.gpsKmph;
-                    diagnosticPieces.temp = line.match(/temp:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.temp;
-                    diagnosticPieces.fuel = line.match(/fuel:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.fuel;
-                    diagnosticPieces.batt = line.match(/batt:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.batt;
-                    diagnosticPieces.vin = line.match(/vin:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.vin;
-                    diagnosticPieces.lpg = line.match(/lpg:([0-9]+)/i)?.[1] || diagnosticPieces.lpg;
-                } else if (line.startsWith('RAM')) {
-                    diagnosticPieces.ramFreeKb = line.match(/([0-9.,]+)KB free/i)?.[1]?.replace(',', '.') || diagnosticPieces.ramFreeKb;
-                    diagnosticPieces.ramTotalKb = line.match(/([0-9.,]+)KB total/i)?.[1]?.replace(',', '.') || diagnosticPieces.ramTotalKb;
-                    diagnosticPieces.ramUsedPct = line.match(/\(([0-9]+)% used\)/i)?.[1] || diagnosticPieces.ramUsedPct;
-                }
-            });
-            composeDiagnosticData();
-            renderDiagnosticData();
-        }
+        // function ingestDiagnosticText(text) {
+        //     if (!text || !text.includes('DEBUG DASHBOARD')) return;
+        //     const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+        //     lines.forEach(line => {
+        //         if (line.startsWith('Time:')) {
+        //             diagnosticPieces.time = line.replace('Time:', '').trim();
+        //         } else if (line.startsWith('GPS')) {
+        //             diagnosticPieces.gpsFix = (line.match(/GPS\s*:\s*([^|]+)/i)?.[1] || '').trim();
+        //             diagnosticPieces.gpsSats = line.match(/sats:([0-9]+)/i)?.[1] || diagnosticPieces.gpsSats;
+        //             diagnosticPieces.gpsSpeed = line.match(/speed:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.gpsSpeed;
+        //         } else if (line.startsWith('WiFi')) {
+        //             diagnosticPieces.wifiStatus = (line.match(/WiFi:\s*([^|]+)/i)?.[1] || '').trim();
+        //             diagnosticPieces.ip = (line.match(/IP:([^|]+)/i)?.[1] || '').trim();
+        //             diagnosticPieces.signal = line.match(/signal:([0-9]+%)/i)?.[1] || diagnosticPieces.signal;
+        //         } else if (line.startsWith('OBD')) {
+        //             diagnosticPieces.obdProtocol = (line.match(/protocol:([\w-]*)/i)?.[1] || '').trim() || diagnosticPieces.obdProtocol;
+        //         } else if (line.startsWith('Upload')) {
+        //             diagnosticPieces.uploadStage = line.match(/stage:([^|]+)/i)?.[1]?.trim() || diagnosticPieces.uploadStage;
+        //             diagnosticPieces.uploadInProgress = line.match(/in_progress:([0-9]+)/i)?.[1] || diagnosticPieces.uploadInProgress;
+        //             diagnosticPieces.uploadCurrentIdx = line.match(/current_idx:([-0-9]+)/i)?.[1] || diagnosticPieces.uploadCurrentIdx;
+        //             diagnosticPieces.uploadFiles = line.match(/files:([0-9]+)/i)?.[1] || diagnosticPieces.uploadFiles;
+        //         } else if (line.startsWith('Log')) {
+        //             diagnosticPieces.logStatus = line.match(/Log\s*:([^|]+)/i)?.[1]?.trim() || diagnosticPieces.logStatus;
+        //             diagnosticPieces.tripDistance = line.match(/trip_dist:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.tripDistance;
+        //             diagnosticPieces.points = line.match(/points:([0-9]+)/i)?.[1] || diagnosticPieces.points;
+        //             diagnosticPieces.startTs = line.match(/start_ts:([0-9]+)/i)?.[1] || diagnosticPieces.startTs;
+        //         } else if (line.startsWith('Car')) {
+        //             diagnosticPieces.carEngOn = line.match(/eng_on:([0-9]+)/i)?.[1] || diagnosticPieces.carEngOn;
+        //             diagnosticPieces.rpm = line.match(/rpm:([0-9]+)/i)?.[1] || diagnosticPieces.rpm;
+        //             diagnosticPieces.kmph = line.match(/kmph:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.kmph;
+        //             diagnosticPieces.gpsKmph = line.match(/gps_kmph:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.gpsKmph;
+        //             diagnosticPieces.temp = line.match(/temp:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.temp;
+        //             diagnosticPieces.fuel = line.match(/fuel:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.fuel;
+        //             diagnosticPieces.batt = line.match(/batt:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.batt;
+        //             diagnosticPieces.vin = line.match(/vin:([0-9.,]+)/i)?.[1]?.replace(',', '.') || diagnosticPieces.vin;
+        //             diagnosticPieces.lpg = line.match(/lpg:([0-9]+)/i)?.[1] || diagnosticPieces.lpg;
+        //         } else if (line.startsWith('RAM')) {
+        //             diagnosticPieces.ramFreeKb = line.match(/([0-9.,]+)KB free/i)?.[1]?.replace(',', '.') || diagnosticPieces.ramFreeKb;
+        //             diagnosticPieces.ramTotalKb = line.match(/([0-9.,]+)KB total/i)?.[1]?.replace(',', '.') || diagnosticPieces.ramTotalKb;
+        //             diagnosticPieces.ramUsedPct = line.match(/\(([0-9]+)% used\)/i)?.[1] || diagnosticPieces.ramUsedPct;
+        //         }
+        //     });
+        //     composeDiagnosticData();
+        //     renderDiagnosticData();
+        // }
 
         function renderDiagnosticData() {
             const mapVals = {
@@ -2298,7 +2298,7 @@ function renderPositionList() {
                 if (bleDevice && bleDevice.gatt && bleDevice.gatt.connected) {
                     fetchDiagnosticsFromCharacteristics();
                 }
-            }, 250);
+            }, LIVE_CAR_UPDATE_INTERVAL);
         }
 
         function stopDiagnosticPolling() {

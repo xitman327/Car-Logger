@@ -2094,11 +2094,9 @@ function renderPositionList() {
                 setBleControls({ connected: true });
                 logBle('Connected. Fetching data...');
 
-                // Parallelize initial discovery and data fetching
-                await Promise.all([
-                    fetchDiagnosticsFromCharacteristics(),
-                    syncPidListFromDevice()
-                ]);
+                // Sequential fetching is required for stability on Android/Mobile BLE stacks
+                await fetchDiagnosticsFromCharacteristics();
+                await syncPidListFromDevice();
                 
                 startDiagnosticPolling();
             } catch (error) {
@@ -2239,10 +2237,9 @@ function renderPositionList() {
                     ensureCharacteristic(METRICS2_UUID)
                 ]);
 
-                const [v1, v2] = await Promise.all([
-                    c1.readValue(),
-                    c2.readValue()
-                ]);
+                // Read sequentially to avoid "GATT operation already in progress" errors on Mobile
+                const v1 = await c1.readValue();
+                const v2 = await c2.readValue();
 
                 const data1 = JSON.parse(bleTextDecoder.decode(v1));
                 const data2 = JSON.parse(bleTextDecoder.decode(v2));

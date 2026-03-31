@@ -1,9 +1,8 @@
 #include <HTTPClient.h>
 
-#ifndef WIFI_SSID
-#define WIFI_SSID Wifi_credentials[0].WiFi_Name
-#define WIFI_PASS Wifi_credentials[0].WiFi_Pass
-#endif
+String WIFI_SSID ;
+String WIFI_PASS ;
+
 
 #ifndef NODERED_USER
 #define NODERED_USER nodeRed_credentials.Node_User.c_str()
@@ -152,6 +151,7 @@ const char* uploadStageName(UploadStage stage) {
     case UploadAuth: return "Auth";
     case UploadSend: return "Send";
     case UploadComplete: return "Complete";
+    case UploadDiscoverWiFi: return "DiscoverWiFi";
     default: return "Unknown";
   }
 }
@@ -253,7 +253,7 @@ void delete_all_trips(){
 
 void request_trip_upload(){
   upload_request = 1;
-  upload_stage = WiFi.isConnected() ? UploadAuth : UploadConnectWiFi;
+  // upload_stage = WiFi.isConnected() ? UploadAuth : UploadConnectWiFi;
   wifi_connect_started_at = millis();
   last_wifi_attempt_ms = 0;
   wifi_attempt_count = 0;
@@ -325,14 +325,51 @@ void upload_trip(){
 }
 
 void task_upload_data(){
+  int16_t WiFiScanStatus=0;
   switch (upload_stage){
 
     case UploadIdle:
       if(upload_request){
-        upload_stage = WiFi.isConnected() ? UploadAuth : UploadConnectWiFi;
+        if(WiFi.isConnected()){
+          upload_stage = UploadAuth;
+        }else{
+
+          upload_stage = UploadDiscoverWiFi;
+          WiFi.mode(WIFI_STA);
+          WiFi.disconnect();
+          WiFi.scanNetworks(true);
+          log_i("Start Wifi Scan");
+        }
         wifi_connect_started_at = millis();
       }
     break;
+
+    case UploadDiscoverWiFi:
+
+      WiFiScanStatus = WiFi.scanComplete();
+      if(WiFiScanStatus < 0){
+        if (WiFiScanStatus == WIFI_SCAN_FAILED) {
+          log_e("WiFi Scan has failed. Starting again.");
+          WiFi.mode(WIFI_STA);
+          WiFi.disconnect();
+          WiFi.scanNetworks(true);
+        }
+      }else{
+        for (int i = 0; i < WiFiScanStatus; ++i) {
+            for(int x = 0; x < sizeof(Wifi_credentials); x++){
+              if(!Wifi_credentials[x].enabled) continue;
+
+              if(WiFi.SSID(i) == Wifi_credentials[x].WiFi_Name){
+                WIFI_SSID = Wifi_credentials[x].WiFi_Name;
+                WIFI_PASS = Wifi_credentials[x].WiFi_Pass;
+                upload_stage = UploadConnectWiFi;
+                log_i("Network Found %s RSSI %d Channel %d", WIFI_SSID, WiFi.RSSI(i), WiFi.channel(i));
+                break;
+              }
+            }
+          }
+      }
+      break;
 
     case UploadConnectWiFi:
       if(WiFi.isConnected()){
@@ -342,10 +379,13 @@ void task_upload_data(){
       }
       if(last_wifi_attempt_ms == 0 || (millis() - last_wifi_attempt_ms) > wifi_retry_interval){
         last_wifi_attempt_ms = millis();
+
         if(wifi_attempt_count >= wifi_max_attempts){
           Serial.println("WiFi retry limit reached, aborting upload request");
           upload_stage = UploadIdle;
           upload_request = 0;
+          WiFi.disconnect();
+          WiFi.mode(WIFI_MODE_NULL);
           break;
         }
         wifi_attempt_count++;
@@ -358,6 +398,8 @@ void task_upload_data(){
         Serial.println("Connection Timed Out");
         upload_stage = UploadIdle;
         upload_request = 0;
+        WiFi.disconnect();
+          WiFi.mode(WIFI_MODE_NULL);
       }
     break;
 
@@ -367,14 +409,6 @@ void task_upload_data(){
         wifi_connect_started_at = millis();
         break;
       }
-    //   ensureFirebaseReady();
-    //   if(!app.isAuthenticated()){
-    //     app.authenticate();
-    //     break;
-    //   }
-    //   if(!app.ready()){
-    //     break;
-    //   }
       if(current_upload_file_index < 0){
         get_filenames();
         current_upload_file_index = 0;
@@ -388,11 +422,6 @@ void task_upload_data(){
         wifi_connect_started_at = millis();
         break;
       }
-    //   ensureFirebaseReady();
-    //   if(!app.ready()){
-    //     upload_stage = UploadAuth;
-    //     break;
-    //   }
 
       if(upload_in_progress){
         if(millis() - upload_started_at > upload_timeout_ms){
@@ -448,6 +477,8 @@ void task_upload_data(){
     case UploadComplete:
       upload_stage = UploadIdle;
       upload_request = 0;
+      WiFi.disconnect();
+      WiFi.mode(WIFI_MODE_NULL);
     break;
   
     default:

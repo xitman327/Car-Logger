@@ -44,7 +44,7 @@ uint32_t last_wifi_attempt_ms = 0;
 uint8_t wifi_attempt_count = 0;
 bool time_corrected_this_trip = false;
 
-enum UploadStage : uint8_t { UploadIdle, UploadConnectWiFi, UploadAuth, UploadSend, UploadComplete };
+enum UploadStage : uint8_t { UploadIdle, UploadConnectWiFi, UploadAuth, UploadSend, UploadComplete, UploadDiscoverWiFi };
 UploadStage upload_stage = UploadIdle;
 const uint8_t db_max_retries = 3;
 uint8_t db_retry_count = 0;

@@ -138,6 +138,17 @@ void split_chunk() {
 
   // Clear and prepare for next chunk
   single_trip_data.clear();
+  JsonArray log_objs = single_trip_data["log_objs"].add<JsonArray>();
+  log_objs.add("time");
+  log_objs.add("lng");
+  log_objs.add("lat");
+  for(int i =0; i < pid_request_list_size_max;i++){
+    if(pid_request_list[i] != 0){
+      String pname = pid_name(pid_request_list[i]);
+      log_objs.add(pname);
+      log_i("\e[0;36m List of pids to log: %d - PID %d - %s \n",i, pid_request_list[i], pname);
+    }
+  }
   chunkIndex++;
 }
 

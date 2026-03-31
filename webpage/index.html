@@ -303,7 +303,7 @@
             height: 8px;
             transform: translateY(2px);
         }
-        .sidebar-open .sidebar-toggle {
+        .sidebar-open #sidebar-toggle {
             left: calc(var(--sidebar-width) + 12px);
         }
         .sidebar-toggle.right-toggle {
@@ -313,14 +313,16 @@
             height: 44px;
             font-size: 18px;
         }
-        .diagnostic-open .sidebar-toggle.right-toggle {
-            right: calc(var(--sidebar-width) + 12px);
-        }
         .sidebar-toggle.config-toggle {
             top: 64px;
         }
-        .config-open .sidebar-toggle.right-toggle {
-            right: calc(var(--sidebar-width) + 12px);
+        @media (min-width: 993px) {
+            .diagnostic-open .sidebar-toggle.right-toggle {
+                right: calc(var(--sidebar-width) + 12px);
+            }
+            .config-open .sidebar-toggle.right-toggle {
+                right: calc(var(--sidebar-width) + 12px);
+            }
         }
         .bolt-icon {
             display: inline-block;
@@ -700,6 +702,7 @@
                     <h5 class="mb-0">Trips</h5>
                     <p class="mb-0 text-muted small" id="trip-count">0 trips total</p>
                 </div>
+                <button id="refresh-trip-btn" class="btn btn-primary btn-sm">Refresh</button>
                 <button id="add-trip-btn" class="btn btn-primary btn-sm">Add Trip</button>
             </div>
             <div id="trips-list">
@@ -1588,6 +1591,7 @@ function renderPositionList() {
                 }
                 diagnosticPanel.classList.toggle('hidden', !diagnosticOpen);
                 document.body.classList.toggle('diagnostic-open', diagnosticOpen);
+                if (diagnosticOpen && window.innerWidth <= 992) hideSidebar();
                 setTimeout(() => map.invalidateSize(), 120);
             });
 
@@ -1604,6 +1608,7 @@ function renderPositionList() {
                 }
                 configPanel.classList.toggle('hidden', !configOpen);
                 document.body.classList.toggle('config-open', configOpen);
+                if (configOpen && window.innerWidth <= 992) hideSidebar();
                 setTimeout(() => map.invalidateSize(), 120);
             });
 
@@ -2369,6 +2374,9 @@ function renderPositionList() {
         }
 
         // Add Trip Button
+        document.getElementById('refresh-trip-btn').addEventListener('click', () => {
+            loadTrips();
+        });
         document.getElementById('add-trip-btn').addEventListener('click', () => {
             addTripModal.show();
         });
@@ -2576,7 +2584,7 @@ function renderPositionList() {
             //     console.log("already old format");
             //     return trip;
             // }
-
+            console.log(trip);
             if (
                 !Array.isArray(trip.log_objs) ||
                 !Array.isArray(trip.log_objs[0]) ||

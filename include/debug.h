@@ -39,11 +39,11 @@ void printDebugDashboard() {
     upload_in_progress,
     current_upload_file_index,
     num_of_files);
-  Serial.printf("Log  : %s | trip_dist:%.2f km | points:%lu | start_ts:%ld\n",
+  Serial.printf("Log  : %s | trip_dist:%.2f km | points:%lu | start_ts:%s\n",
     log_started ? "ON " : "OFF",
     trip_distance_km,
     (unsigned long)trip_locations_count,
-    (long)(single_trip_data["start_timestamp"] | 0L));
+     tripBaseName.c_str());
   Serial.printf("Car  : eng_on:%d rpm:%.0f kmph:%.1f gps_kmph:%.1f temp:%.1fC fuel:%.1f%% batt:%.2fV lpg:%d\n",
     engine_on,
     rpmn,

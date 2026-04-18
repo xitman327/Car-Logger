@@ -41,6 +41,7 @@ void sync_time_from_wifi() {
     rtc.setTimeStruct(timeinfo);
     rtc.setTime(rtc.getEpoch() + timezone_offset_seconds);
     wifi_time_synced = true;
+    log_i("\e[0;33m Time set by WiFi \e[0m");
     correct_trip_time_if_needed();
   } else {
     request_ntp_time();

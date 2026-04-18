@@ -1,4 +1,4 @@
-#define CHUNK_SIZE 200
+#define CHUNK_SIZE 500
 int chunkIndex = 0;
 String tripBaseName;     // formatted datetime used as filename root
 
@@ -56,18 +56,23 @@ String formatEpochForFilename(time_t ts) {
   return String(buf);
 }
 
+void set_tripBaseName(){
+  time_t now = rtc.getEpoch();
+  tripBaseName = formatEpochForFilename(now);
+  if (tripBaseName.isEmpty()) {
+    tripBaseName = String(now);
+  }
+}
+
 void trip_start() {
   log_started = true;
   trip_locations_count = 0;
   trip_distance_km = 0.0;
   chunkIndex = 0;
   single_trip_data.clear();
-
+  sync_time();
   time_t now = rtc.getEpoch();
-  tripBaseName = formatEpochForFilename(now);
-  if (tripBaseName.isEmpty()) {
-    tripBaseName = String(now);
-  }
+  set_tripBaseName();
 
   single_trip_data["start_timestamp"] = now;
   single_trip_data["trip_locations_count"] = trip_locations_count;
@@ -81,7 +86,7 @@ void trip_start() {
     if(pid_request_list[i] != 0){
       String pname = pid_name(pid_request_list[i]);
       log_objs.add(pname);
-      log_i("\e[0;36m List of pids to log: %d - PID %d - %s \n",i, pid_request_list[i], pname);
+      log_i("\e[0;36m List of pids to log: %d - PID %d - %s \e[0m]",i, pid_request_list[i], pname);
     }
   }
   
@@ -111,8 +116,8 @@ void split_chunk() {
   single_trip_data["end_timestamp"] = rtc.getEpoch();
 
   if(sd_ready){
-    if(sdfile.open(fname, O_RDWR)){
-      log_i("File Openned");
+    if(sdfile.open(fname, O_CREAT | O_RDWR)){
+      log_i("File Openned %s", fname);
       uint32_t wrote = serializeJson(single_trip_data, sdfile);
       if(wrote > 0 && sdfile.size() > 0){
         log_i("File wrote success. %s (%u bytes) — total count=%d", fname, wrote, trip_locations_count);
@@ -121,7 +126,7 @@ void split_chunk() {
       }
       if(!sdfile.attrib(0)){Serial.println("clearing attributes failed");}
     }else{
-      log_e("File error %d", sdfile.getError());
+      log_e("File error not oppened");
     }
     sdfile.close();
   }else{
@@ -138,6 +143,8 @@ void split_chunk() {
 
   // Clear and prepare for next chunk
   single_trip_data.clear();
+  single_trip_data["start_timestamp"] = rtc.getEpoch();
+  single_trip_data["trip_locations_count"] = trip_locations_count;
   JsonArray log_objs = single_trip_data["log_objs"].add<JsonArray>();
   log_objs.add("time");
   log_objs.add("lng");
@@ -146,7 +153,7 @@ void split_chunk() {
     if(pid_request_list[i] != 0){
       String pname = pid_name(pid_request_list[i]);
       log_objs.add(pname);
-      log_i("\e[0;36m List of pids to log: %d - PID %d - %s \n",i, pid_request_list[i], pname);
+      log_i("\e[0;36m List of pids to log: %d - PID %d - %s \e[0m",i, pid_request_list[i], pname);
     }
   }
   chunkIndex++;
@@ -163,19 +170,6 @@ void populate_current_json() {
 
   single_trip_data["trip_distance"] = trip_distance_km;
 
-  // FIXED: Use createNestedObject() here too
-  // JsonObject location = single_trip_data["trip_locations"].add<JsonObject>();
-  // location["time"] = rtc.getEpoch();
-  // set_location(location);
-  // // location["speed"] = get_effective_speed_kmph();
-  // for(int i =0; i < pid_request_list_size_max;i++){
-  //   if(pid_request_list[i] != 0){
-  //     String pname = pid_name(pid_request_list[i]);
-  //     // Serial.println(pname);
-  //     location[pname] = pid_values[i];
-  //     // log_i("\e[0;36m %d - PID %d - %s : %f",i, pid_request_list[i], pname, pid_values[i]);
-  //   }
-  // }
   time_t now = rtc.getEpoch();
   JsonArray location = single_trip_data["trip_locations"].add<JsonArray>();
   location.add(now);

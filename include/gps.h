@@ -315,7 +315,7 @@ extern void correct_trip_time_if_needed();
 
 void sync_rtc_from_gps(TinyGPSPlus &gps)
 {
-  if (gps.time.isValid() && gps.date.isValid())
+  if (gps.time.isValid() && gps.date.isValid() && gps.time.value() > 100000)
   {
     rtc.setTime(
         gps.time.second(),
@@ -325,8 +325,11 @@ void sync_rtc_from_gps(TinyGPSPlus &gps)
         gps.date.month(),
         gps.date.year());
     rtc.setTime(rtc.getEpoch() + timezone_offset_seconds);
+    log_i("\e[0;33m Time set by GPS \e[0m");
     gps_time_synced = true;
     correct_trip_time_if_needed();
+  }else{
+    log_i("\e[0;33m GPS Time behind \e[0m");
   }
 
   gps_speed_valid = gps.speed.isValid();
@@ -382,7 +385,7 @@ void loop_gps()
 
     // digitalWrite(LEDA, !digitalRead(LEDA));
 
-    sync_rtc_from_gps(gps);
+    // sync_rtc_from_gps(gps);
 
     if (gps.location.isValid()) {
       fix_lat = gps.location.lat();
@@ -392,4 +395,8 @@ void loop_gps()
       gps_location_valid = false;
     }
   }
+}
+
+void sync_time(){
+  sync_rtc_from_gps(gps);
 }

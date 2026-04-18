@@ -113,8 +113,6 @@ static bool uploadFileSPIFFS(const char* url, String fileName) {
     // Metadata headers (Node-RED can use these to name file)
     http.addHeader("Content-Type", "application/octet-stream");
     http.addHeader("X-Filename", filePath);
-
-    // This is the important call: streams file directly, no big RAM buffer
     code = http.sendRequest("POST", &f, fileSize);
 
     Serial.printf("HTTP response code: %d\n", code);
@@ -156,12 +154,13 @@ const char* uploadStageName(UploadStage stage) {
   }
 }
 
-int get_filenames(){
+int get_filenames(bool _silent = false){
 
   num_of_files = 0;
 
   if(sd_ready){
-    Serial.println("listing SD files in /");
+    if(!_silent)
+    {Serial.println("listing SD files in /");}
 
     File32 root;
     root.open("/");
@@ -180,11 +179,14 @@ int get_filenames(){
         lstfile = root.openNextFile();
         continue;
       }
+      if(!_silent){
       if(!lstfile.attrib(0)){Serial.println("clearing attributes failed");}
       Serial.print("FILE: ");
       Serial.print(name);
       Serial.print("  ");
       Serial.println(lstfile.size());
+      }
+
       dir_filenames_array[num_of_files] = name;
       num_of_files++;
       lstfile = root.openNextFile();
@@ -195,9 +197,9 @@ int get_filenames(){
     return num_of_files;
 
   }else{
-    Serial.println("listing SPIFFS files in /");
+    if(!_silent){Serial.println("listing SPIFFS files in /");}
   if(!FS_STARTED){
-    Serial.println("FS not started");
+    if(!_silent){Serial.println("FS not started");}
     return 0;
   }
 
@@ -216,11 +218,11 @@ int get_filenames(){
         spifile = root.openNextFile();
         continue;
       }
-      
+      if(!_silent){
       Serial.print("FILE: ");
       Serial.print(name);
       Serial.print("  ");
-      Serial.println(spifile.size());
+      Serial.println(spifile.size());}
       dir_filenames_array[num_of_files] = name.startsWith("/") ? name : "/" + name;
       num_of_files++;
       spifile = root.openNextFile();
@@ -336,7 +338,7 @@ void task_upload_data(){
 
           upload_stage = UploadDiscoverWiFi;
           WiFi.mode(WIFI_STA);
-          WiFi.disconnect();
+          // WiFi.disconnect();
           WiFi.scanNetworks(true);
           log_i("Start Wifi Scan");
         }
@@ -351,7 +353,7 @@ void task_upload_data(){
         if (WiFiScanStatus == WIFI_SCAN_FAILED) {
           log_e("WiFi Scan has failed. Starting again.");
           WiFi.mode(WIFI_STA);
-          WiFi.disconnect();
+          // WiFi.disconnect();
           WiFi.scanNetworks(true);
         }
       }else{
@@ -373,10 +375,12 @@ void task_upload_data(){
 
     case UploadConnectWiFi:
       if(WiFi.isConnected()){
+        delay(1000);
         upload_stage = UploadAuth;
         wifi_attempt_count = 0;
         break;
       }
+
       if(last_wifi_attempt_ms == 0 || (millis() - last_wifi_attempt_ms) > wifi_retry_interval){
         last_wifi_attempt_ms = millis();
 
@@ -384,22 +388,24 @@ void task_upload_data(){
           Serial.println("WiFi retry limit reached, aborting upload request");
           upload_stage = UploadIdle;
           upload_request = 0;
-          WiFi.disconnect();
-          WiFi.mode(WIFI_MODE_NULL);
+          // WiFi.disconnect();
+          // WiFi.mode(WIFI_MODE_NULL);
           break;
         }
+
         wifi_attempt_count++;
         WiFi.mode(WIFI_MODE_STA);
         WiFi.begin(WIFI_SSID, WIFI_PASS);
         WiFi.setAutoReconnect(true);
         Serial.printf("Connect to %s (attempt %d/%d)\n", WIFI_SSID, wifi_attempt_count, wifi_max_attempts);
       }
+
       if(millis() - wifi_connect_started_at > wifi_connect_timeout){
         Serial.println("Connection Timed Out");
         upload_stage = UploadIdle;
         upload_request = 0;
-        WiFi.disconnect();
-          WiFi.mode(WIFI_MODE_NULL);
+        // WiFi.disconnect();
+        // WiFi.mode(WIFI_MODE_NULL);
       }
     break;
 
@@ -477,8 +483,8 @@ void task_upload_data(){
     case UploadComplete:
       upload_stage = UploadIdle;
       upload_request = 0;
-      WiFi.disconnect();
-      WiFi.mode(WIFI_MODE_NULL);
+      // WiFi.disconnect();
+      // WiFi.mode(WIFI_MODE_NULL);
     break;
   
     default:
@@ -498,6 +504,7 @@ void correct_trip_time_if_needed() {
   single_trip_data["start_timestamp"] = now;
   single_trip_data["trip_locations"][0]["time"] = now;
   time_corrected_this_trip = true;
-  Serial.println("Trip time corrected using synced clock");
+  set_tripBaseName();
+  log_i("Trip time corrected using synced clock");
 }
 

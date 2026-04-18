@@ -106,13 +106,13 @@ namespace
     {
       deviceConnected = true;
       server->updateConnParams(desc->conn_handle, 6, 12, 0, 100); // 7.5ms - 15ms interval
-      Serial.println("BLE client connected");
+      log_i("BLE client connected");
     }
 
     void onDisconnect(NimBLEServer *server) override
     {
       deviceConnected = false;
-      Serial.println("BLE client disconnected");
+      log_i("BLE client disconnected");
     }
   };
 

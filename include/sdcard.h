@@ -10,6 +10,7 @@
 
 
 
+
 SdFat32 sd;
 File32 sdfile;
 
@@ -38,6 +39,4 @@ void setup_sd(){
         Serial.println("SD init success");
         sd_ready = 1;
     }
-    
-    
 }

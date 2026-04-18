@@ -81,9 +81,10 @@ float lts_trip = 0;
 bool log_started = 0;
 bool debug_dashboard_enabled = false;
 
+#define max_filenames 50
 int num_of_files = 0;
-String dir_filenames_array[11];
-#define max_filenames 10
+String dir_filenames_array[max_filenames];
+
 
 extern int num_of_files;
 
@@ -151,7 +152,7 @@ void setup()
   Serial.begin(115200);
 
   delay(1000);
-  log_i("\e[0;32m Starting");
+  log_i("\e[0;32m Starting\e[0m");
 
   setup_sd();
   load_settings();
@@ -208,10 +209,14 @@ void setup()
 
 static uint8_t hue = 0;
 
-#define log_time 2000 //1000 or 2000
+#define log_time 10 //1000 or 2000
 
 #define led_time 20
 #define debug_report_time 2000
+
+#define some_other_time 2000
+uint32_t tm_other;
+
 uint32_t tm_log, tm_led;
 uint32_t tm_debug_report = 0;
 void loop()
@@ -249,7 +254,10 @@ void loop()
   loop_gps();
   loop_button();
 
-
+  if(millis() - tm_other > some_other_time){
+    tm_other = millis();
+    get_filenames(true);
+  }
  
 
   if(millis() - tm_log > log_time){

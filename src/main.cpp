@@ -122,6 +122,7 @@ bool debug_log_start = 0;
 #include "lcd.h"
 #include "debug.h"
 #include "extra_functions.h"
+#include "lora.h"
 
 TaskHandle_t Core0_CodeHandle = NULL;
 void Core0_Code(void *parameter){
@@ -148,7 +149,11 @@ void setup()
   WiFi.onEvent(WiFiEvent);
   WiFi.mode(WIFI_MODE_STA);
   WiFi.setAutoReconnect(false);
+
+  force_connect_wifi(); // DEBUG
+
   esp_log_level_set("*",ESP_LOG_INFO);
+
   Serial.begin(115200);
 
   delay(1000);
@@ -188,6 +193,8 @@ void setup()
 
   setup_button();
 
+  setup_lora();
+
   xTaskCreatePinnedToCore(
     Core0_Code,         // Task function
     "BlinkTask",       // Task name
@@ -222,7 +229,7 @@ uint32_t tm_debug_report = 0;
 void loop()
 {
   if(WiFi.isConnected()){
-    if(!gps_time_synced || !wifi_time_synced){
+    if(!wifi_time_synced){
       sync_time_from_wifi();
     }
   }
@@ -253,6 +260,8 @@ void loop()
   sensors_loop();
   loop_gps();
   loop_button();
+
+  loop_lora();
 
   if(millis() - tm_other > some_other_time){
     tm_other = millis();

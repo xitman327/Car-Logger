@@ -21,29 +21,24 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   }
 }
 
-void request_ntp_time() {
-  if (!WiFi.isConnected()) {
-    return;
-  }
-  if (!ntp_requested || (millis() - last_ntp_attempt_ms) > ntp_retry_interval_ms) {
-    last_ntp_attempt_ms = millis();
-    ntp_requested = true;
-    configTime(0, 0, ntpServer);
-  }
-}
-
 void sync_time_from_wifi() {
   if (!WiFi.isConnected()) {
     return;
   }
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  setenv("TZ", "EET-2EEST,M3.5.0/3,M10.5.0/4", 1);
+  tzset();
   struct tm timeinfo;
-  if (getLocalTime(&timeinfo, 0)) {
+  if(getLocalTime(&timeinfo)){
     rtc.setTimeStruct(timeinfo);
-    rtc.setTime(rtc.getEpoch() + timezone_offset_seconds);
     wifi_time_synced = true;
-    log_i("\e[0;33m Time set by WiFi \e[0m");
-    correct_trip_time_if_needed();
-  } else {
-    request_ntp_time();
+    Serial.print("Local Time: ");Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+  }else{
+    log_e("cannot get time");
   }
+}
+
+void force_connect_wifi(){
+  WiFi.mode(WIFI_MODE_STA);
+  WiFi.begin("Xitos_Home", "xitosman327");
 }

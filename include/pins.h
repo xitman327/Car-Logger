@@ -30,8 +30,13 @@
 #define LEDB 48
 #define USER_BUTTON 0
 
-#define LORA_MODE1 10
-#define LORA_MODE0 11
-#define LORA_BUSY 12
-#define LORA_CS 13
-#define LORA_RST 14
+// #define LORA_MODE1 10
+// #define LORA_MODE0 11
+// #define LORA_BUSY 12
+// #define LORA_CS 13
+// #define LORA_RST 14
+
+#define LORA_CS   36
+#define LORA_DIO1 11
+#define LORA_RST  37
+#define LORA_BUSY 35

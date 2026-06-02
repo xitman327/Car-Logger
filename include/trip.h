@@ -62,23 +62,22 @@ void set_tripBaseName(){
   if (tripBaseName.isEmpty()) {
     tripBaseName = String(now);
   }
+  tripBaseName += ".csv";
 }
-
-void trip_start() {
+JsonDocument fileHeader;
+void trip_start(){
+  if (log_started) return;
   log_started = true;
   trip_locations_count = 0;
   trip_distance_km = 0.0;
-  chunkIndex = 0;
-  single_trip_data.clear();
   sync_time();
   time_t now = rtc.getEpoch();
   set_tripBaseName();
 
-  single_trip_data["start_timestamp"] = now;
-  single_trip_data["trip_locations_count"] = trip_locations_count;
-
-  // determine what objects (sensors - PIDs) to log
-  JsonArray log_objs = single_trip_data["log_objs"].add<JsonArray>();
+  // JsonDocument fileHeader;
+  fileHeader["start_timestamp"] = now;
+  fileHeader["trip_locations_count"] = trip_locations_count;
+  JsonArray log_objs = fileHeader["log_objs"].add<JsonArray>();
   log_objs.add("time");
   log_objs.add("lng");
   log_objs.add("lat");
@@ -89,38 +88,14 @@ void trip_start() {
       log_i("\e[0;36m List of pids to log: %d - PID %d - %s \e[0m]",i, pid_request_list[i], pname);
     }
   }
-  
-  JsonArray location = single_trip_data["trip_locations"].add<JsonArray>();
-  location.add(now);
-
-  set_location(location);
-  // location["speed"] = get_effective_speed_kmph();
-  // Serial.println("List of pids to log");
-  for(int i =0; i < pid_request_list_size_max;i++){
-    if(pid_request_list[i] != 0){
-      // String pname = pid_name(pid_request_list[i]);
-      location.add((float) pid_values[i]);
-      // log_i("\e[0;36m %d - PID %d - %s : %f",i, pid_request_list[i], pname, pid_values[i]);
-    }
-  }
-  Serial.printf("Trip started %s\n", tripBaseName.c_str());
-}
-
-void split_chunk() {
-  if (single_trip_data.size() == 0) return;
-
-  char fname[40];
-  snprintf(fname, sizeof(fname), "/%s_%03d.json",
-           tripBaseName.c_str(), chunkIndex);
-
-  single_trip_data["end_timestamp"] = rtc.getEpoch();
 
   if(sd_ready){
-    if(sdfile.open(fname, O_CREAT | O_RDWR)){
-      log_i("File Openned %s", fname);
-      uint32_t wrote = serializeJson(single_trip_data, sdfile);
+    if(sdfile.open(tripBaseName.c_str(), O_CREAT | O_RDWR)){
+      log_i("File Openned %s", tripBaseName.c_str());
+      uint32_t wrote = serializeJson(fileHeader, sdfile);
+      sdfile.println();
       if(wrote > 0 && sdfile.size() > 0){
-        log_i("File wrote success. %s (%u bytes) — total count=%d", fname, wrote, trip_locations_count);
+        log_i("File wrote success. %s (%u bytes)", tripBaseName.c_str(), wrote);
       }else{
         log_e("File error %d", sdfile.getError());
       }
@@ -129,107 +104,83 @@ void split_chunk() {
       log_e("File error not oppened");
     }
     sdfile.close();
-  }else{
-    log_w("USING SPIFFS, LIMITED MEMMORY");
-    File f = SPIFFS.open(fname, FILE_WRITE);
-    if (f) {
-      uint32_t wrote = serializeJson(single_trip_data, f);
-      log_i("File wrote success. %s (%u bytes) — total count=%d\n", fname, wrote, trip_locations_count);
-    }else{
-      log_e("File error %d", f.getWriteError());
-    }
-    f.close();
   }
 
-  // Clear and prepare for next chunk
-  single_trip_data.clear();
-  single_trip_data["start_timestamp"] = rtc.getEpoch();
-  single_trip_data["trip_locations_count"] = trip_locations_count;
-  JsonArray log_objs = single_trip_data["log_objs"].add<JsonArray>();
-  log_objs.add("time");
-  log_objs.add("lng");
-  log_objs.add("lat");
-  for(int i =0; i < pid_request_list_size_max;i++){
-    if(pid_request_list[i] != 0){
-      String pname = pid_name(pid_request_list[i]);
-      log_objs.add(pname);
-      log_i("\e[0;36m List of pids to log: %d - PID %d - %s \e[0m",i, pid_request_list[i], pname);
-    }
-  }
-  chunkIndex++;
+  Serial.printf("Trip started %s\n", tripBaseName.c_str());
+
 }
 
+String trip_locations_buffer;
+#define print_to_sdcard_limit 500
 void populate_current_json() {
   if (!log_started) return;
-
-  kmph_max = max(kmph_max, kmph);
-  single_trip_data["top_speed"] = kmph_max;
-
-  lpkm_max = max(lpkm_max, lpkm);
-  single_trip_data["max_consumption"] = lpkm_max;
-
-  single_trip_data["trip_distance"] = trip_distance_km;
-
+  trip_locations_count++;
   time_t now = rtc.getEpoch();
-  JsonArray location = single_trip_data["trip_locations"].add<JsonArray>();
-  location.add(now);
+  trip_locations_buffer += String(now);
 
-  set_location(location);
-  // location["speed"] = get_effective_speed_kmph();
-  // Serial.println("List of pids to log");
+  if(gps_location_valid){
+    trip_locations_buffer += "," + String(fix_lng) + "," + String(fix_lat);
+  }else{
+    trip_locations_buffer += "," + String(-1) + "," + String(-1);
+  }
+
   for(int i =0; i < pid_request_list_size_max;i++){
     if(pid_request_list[i] != 0){
-      // String pname = pid_name(pid_request_list[i]);
-      location.add((float) pid_values[i]);
-      // log_i("\e[0;36m %d - PID %d - %s : %f",i, pid_request_list[i], pname, pid_values[i]);
+
+      trip_locations_buffer += "," + String(pid_values[i]);
     }
   }
 
-  trip_locations_count++;
-  single_trip_data["trip_locations_count"] = trip_locations_count;
+  trip_locations_buffer += "\n";
 
-  // split every CHUNK_SIZE locations
-  if (trip_locations_count % CHUNK_SIZE == 0) {
-    split_chunk();
+  
+  if(trip_locations_buffer.length() > print_to_sdcard_limit){
+    log_i("trip_locations_buffer size %d", trip_locations_buffer.length());
+    if(sd_ready){
+      if(sdfile.open(tripBaseName.c_str(), O_APPEND | O_AT_END | O_RDWR)){ // file should already exist
+        log_i("File Openned %s", tripBaseName);
+        uint32_t wrote = sdfile.print(trip_locations_buffer);
+        if(wrote > 0 && sdfile.size() > 0){
+          log_i("File wrote success. %s (%u bytes)", tripBaseName, wrote);
+        }else{
+          log_e("File error %d", sdfile.getError());
+        }
+        if(!sdfile.attrib(0)){Serial.println("clearing attributes failed");}
+      }else{
+        log_e("File error not oppened");
+      }
+      sdfile.close();
+    }
+
+    trip_locations_buffer.clear();
   }
 }
+
 
 
 void trip_end() {
   if (!log_started) return;
   log_started = false;
-
-  char fname[40];
-  snprintf(fname, sizeof(fname), "/%s_%03d.json",
-           tripBaseName.c_str(), chunkIndex);
-
-  single_trip_data["end_timestamp"] = rtc.getEpoch();
-  if(sd_ready){
-    if(sdfile.open(fname, O_RDWR | O_CREAT)){
-      log_i("File Openned");
-      uint32_t wrote = serializeJson(single_trip_data, sdfile);
-      if(wrote > 0 && sdfile.size() > 0){
-        log_i("File wrote success. %s (%u bytes) — total count=%d", fname, wrote, trip_locations_count);
+  fileHeader.clear();
+  log_i("trip_locations_buffer size %d", trip_locations_buffer.length());
+  if(trip_locations_buffer.length() > 100){
+    if(sd_ready){
+      if(sdfile.open(tripBaseName.c_str(), O_APPEND | O_AT_END | O_RDWR)){ // file should already exist
+        log_i("File Openned %s", tripBaseName);
+        uint32_t wrote = sdfile.println(trip_locations_buffer);
+        if(wrote > 0 && sdfile.size() > 0){
+          log_i("File wrote success. %s (%u bytes)", tripBaseName, wrote);
+        }else{
+          log_e("File error %d", sdfile.getError());
+        }
+        if(!sdfile.attrib(0)){Serial.println("clearing attributes failed");}
       }else{
-        log_e("File error %d", sdfile.getError());
+        log_e("File error not oppened");
       }
-      if(!sdfile.attrib(0)){Serial.println("clearing attributes failed");}
-    }else{
-      log_e("File error %d", sdfile.getError());
+      sdfile.close();
     }
-    sdfile.close();
-  }else{
-    log_w("USING SPIFFS, LIMITED MEMMORY");
-    File f = SPIFFS.open(fname, FILE_WRITE);
-    if (f) {
-      uint32_t wrote = serializeJson(single_trip_data, f);
-      log_i("File wrote success. %s (%u bytes) — total count=%d\n", fname, wrote, trip_locations_count);
-    }else{
-      log_e("File error %d", f.getWriteError());
-    }
-    f.close();
+
+    trip_locations_buffer.clear();
   }
 
-  single_trip_data.clear();  // free RAM
-  Serial.println("🧹 JSON cleared from RAM");
 }

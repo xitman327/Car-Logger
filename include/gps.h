@@ -311,7 +311,7 @@ private:
   }
 };
 
-extern void correct_trip_time_if_needed();
+// extern void correct_trip_time_if_needed();
 
 void sync_rtc_from_gps(TinyGPSPlus &gps)
 {
@@ -327,7 +327,7 @@ void sync_rtc_from_gps(TinyGPSPlus &gps)
     rtc.setTime(rtc.getEpoch() + timezone_offset_seconds);
     log_i("\e[0;33m Time set by GPS \e[0m");
     gps_time_synced = true;
-    correct_trip_time_if_needed();
+    // correct_trip_time_if_needed();
   }else{
     log_i("\e[0;33m GPS Time behind \e[0m");
   }

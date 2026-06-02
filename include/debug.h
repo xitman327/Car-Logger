@@ -8,6 +8,16 @@ int wifi_signal_percent(){
   return (rssi + 100) * 2;
 }
 
+String formatKilobytes(size_t bytes) {
+  float kb = bytes / 1024.0f;
+  char buf[16];
+  snprintf(buf, sizeof(buf), "%.2f", kb);
+  for (char *p = buf; *p; ++p) {
+    if (*p == '.') *p = ','; // use comma as decimal separator per request
+  }
+  return String(buf);
+}
+
 
 
 void printDebugDashboard() {
@@ -34,11 +44,11 @@ void printDebugDashboard() {
     ip.c_str(),
     wifi_signal_percent());
   Serial.printf("OBD Adapter: %s Car: %s protocol: %s Vin: %3.1f\n", elm_ready?"Connected":"Error", elm_connected?"Connected":"Error" , ELMprotocol.c_str(), vin);
-  Serial.printf("Upload: stage:%s | in_progress:%d | current_idx:%d | files:%d\n",
-    uploadStageName(upload_stage),
-    upload_in_progress,
-    current_upload_file_index,
-    num_of_files);
+  // Serial.printf("Upload: stage:%s | in_progress:%d | current_idx:%d | files:%d\n",
+  //   uploadStageName(upload_stage),
+  //   upload_in_progress,
+  //   current_upload_file_index,
+  //   num_of_files);
   Serial.printf("Log  : %s | trip_dist:%.2f km | points:%lu | start_ts:%s\n",
     log_started ? "ON " : "OFF",
     trip_distance_km,
@@ -102,6 +112,7 @@ void handleDebugCommand(char key) {
       Serial.println("Print Settings (S)");
     break;
     case 'K':
+      if(!demo_mode){break;}
       temp_trip_start_condition = trip_start_condition;
       debug_log_start = 1;
       rpmn = 2400;
@@ -110,6 +121,7 @@ void handleDebugCommand(char key) {
       Serial.println("DBG: Start Log (K)");
       break;
     case 'L':
+    if(!demo_mode){break;}
       debug_log_start = 0;
       trip_start_condition = temp_trip_start_condition;
       rpmn = 0;
@@ -118,18 +130,22 @@ void handleDebugCommand(char key) {
       Serial.println("DBG: Stop Log (L)");
       break;
     case 'J':
-      request_trip_upload();
+    if(!demo_mode){break;}
       Serial.println("DBG: Upload requested (J)");
+      uploadPendingFiles();
       break;
     case 'D':
+    if(!demo_mode){break;}
       delete_all_trips();
       Serial.println("DBG: Deleted all trips (D)");
       break;
     case 'F':
+    if(!demo_mode){break;}
       get_filenames();
       Serial.printf("DBG: Listed files, count=%d (F)\n", num_of_files);
       break;
     case 'W':
+    if(!demo_mode){break;}
       if (WiFi.isConnected()) {
         Serial.println("DBG: WiFi already connected (W)");
       } else {
@@ -148,20 +164,12 @@ void handleDebugCommand(char key) {
       Serial.println("DBG: Settings printed (S)");
       break;
     case 'U':
-      upload_stage = WiFi.isConnected() ? UploadAuth : UploadConnectWiFi;
-      wifi_connect_started_at = millis();
-      last_wifi_attempt_ms = 0;
-      current_upload_file_index = -1;
-      active_upload_file_index = -1;
-      upload_in_progress = false;
-      upload_error = false;
-      upload_done_flag = false;
-      upload_request = 1;
-      Serial.println("DBG: Upload state reset (U)");
+    if(!demo_mode){break;}
+      Serial.println("Ping Server");
+      if(pingServer()){
+        Serial.println("Ping Success!");
+      }
       break;
-    case 'P':
-      // Serial.println(pin)
-    break;
     default:
       Serial.printf("DBG: Unhandled key '%c'\n", key);
       break;

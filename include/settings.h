@@ -5,6 +5,9 @@ typedef struct{
   bool enabled;
 } wifi_preferences_t; // Fixed spelling
 
+String WIFI_SSID ;
+String WIFI_PASS ;
+
 typedef struct{
   String Node_User;
   String Node_Pass;
@@ -100,23 +103,27 @@ void save_settings(){
 JsonDocument configs;  // Adjust size as needed
   
   // Create wifi array
-  JsonArray wifiArray = configs.createNestedArray("wifi");
+  // JsonArray wifiArray = configs.createNestedArray("wifi");
+  JsonArray wifiArray = configs["wifi"].add<JsonArray>();
   
   for(int i = 0; i < 4; i++){
-    JsonObject wifiObj = wifiArray.createNestedObject();
+    // JsonObject wifiObj = wifiArray.createNestedObject();
+    JsonObject wifiObj = wifiArray.add<JsonObject>();
     wifiObj["name"] = Wifi_credentials[i].WiFi_Name;
     wifiObj["pass"] = Wifi_credentials[i].WiFi_Pass;
     wifiObj["enabled"] = Wifi_credentials[i].enabled;
   }
   
   // Create nodered object
-  JsonObject nrObj = configs.createNestedObject("nodered");
+  // JsonObject nrObj = configs.createNestedObject("nodered");
+  JsonObject nrObj = configs["nodered"].add<JsonObject>();
   nrObj["user"] = nodeRed_credentials.Node_User;
   nrObj["pass"] = nodeRed_credentials.Node_Pass;
   nrObj["url"] = nodeRed_credentials.Node_URL;
   
   // Create pid_req array
-  JsonArray pidArray = configs.createNestedArray("pid_req");
+  // JsonArray pidArray = configs.createNestedArray("pid_req");
+  JsonArray pidArray = configs["pid_req"].add<JsonArray>();
   for(int i = 0; i < pid_request_list_size; i++){
     pidArray.add(pid_request_list[i]);
   }

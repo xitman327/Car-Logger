@@ -66,7 +66,7 @@ const float lpg_rpm_threshold = 3000.0f;
 
 float trip_distance_km = 0;
 
-JsonDocument single_trip_data;
+// JsonDocument single_trip_data;
 
 uint32_t trip_locations_count = 0;
 uint32_t last_distance_update_ms = 0;
@@ -216,7 +216,7 @@ void setup()
 
 static uint8_t hue = 0;
 
-#define log_time 10 //1000 or 2000
+#define log_time 2000 //1000 or 2000
 
 #define led_time 20
 #define debug_report_time 2000
@@ -242,15 +242,13 @@ void loop()
       Serial.printf("DBG: Demo mode %s\n", demo_mode ? "ENABLED" : "DISABLED");
       continue;
     }
-    if (demo_mode) {
-      handleDebugCommand(key);
-    }
+    handleDebugCommand(key);
   }
 
   
 
   if(upload_request){
-    task_upload_data();
+    // task_upload_data();
   }
 
 
@@ -261,7 +259,7 @@ void loop()
   loop_gps();
   loop_button();
 
-  loop_lora();
+  // loop_lora();
 
   if(millis() - tm_other > some_other_time){
     tm_other = millis();

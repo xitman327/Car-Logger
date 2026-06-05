@@ -104,7 +104,7 @@ JsonDocument configs;  // Adjust size as needed
   
   // Create wifi array
   // JsonArray wifiArray = configs.createNestedArray("wifi");
-  JsonArray wifiArray = configs["wifi"].add<JsonArray>();
+  JsonArray wifiArray = configs["wifi"].to<JsonArray>();
   
   for(int i = 0; i < 4; i++){
     // JsonObject wifiObj = wifiArray.createNestedObject();
@@ -116,14 +116,14 @@ JsonDocument configs;  // Adjust size as needed
   
   // Create nodered object
   // JsonObject nrObj = configs.createNestedObject("nodered");
-  JsonObject nrObj = configs["nodered"].add<JsonObject>();
+  JsonObject nrObj = configs["nodered"].to<JsonObject>();
   nrObj["user"] = nodeRed_credentials.Node_User;
   nrObj["pass"] = nodeRed_credentials.Node_Pass;
   nrObj["url"] = nodeRed_credentials.Node_URL;
   
   // Create pid_req array
   // JsonArray pidArray = configs.createNestedArray("pid_req");
-  JsonArray pidArray = configs["pid_req"].add<JsonArray>();
+  JsonArray pidArray = configs["pid_req"].to<JsonArray>();
   for(int i = 0; i < pid_request_list_size; i++){
     pidArray.add(pid_request_list[i]);
   }

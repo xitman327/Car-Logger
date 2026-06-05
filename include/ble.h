@@ -1,3 +1,4 @@
+// NEW CODE
 #pragma once
 
 #include <Arduino.h>
@@ -262,7 +263,7 @@ void updateAllCharacteristics()
   metrics1_doc["time"] = rtc.getEpoch();
 
   // JsonObject gps = metrics1_doc.createNestedObject("gps");
-  JsonObject gps = metrics1_doc["gps"].add<JsonObject>();
+  JsonObject gps = metrics1_doc["gps"].to<JsonObject>();
   gps["fix"] = gps_location_valid;
   gps["sats"] = last_sat_count;
   gps["speed"] = round(gps_speed_kmph * 10) / 10.0;
@@ -270,8 +271,10 @@ void updateAllCharacteristics()
   sprintf(gps_loc, "%.6f,%.6f", fix_lat, fix_lng);
   gps["pos"] = gps_loc;
 
+  // serializeJsonPretty(gps, Serial);
+
   // JsonObject wifi = metrics1_doc.createNestedObject("wifi");
-  JsonObject wifi = metrics1_doc["wifi"].add<JsonObject>();
+  JsonObject wifi = metrics1_doc["wifi"].to<JsonObject>();
   wifi["status"] = WiFi.isConnected();
   wifi["ip"] = WiFi.isConnected() ? WiFi.localIP().toString() : "0.0.0.0";
   wifi["signal"] = wifi_signal_percent();
@@ -279,14 +282,14 @@ void updateAllCharacteristics()
   metrics1_doc["obd_protocol"] = ELMprotocol;
 
   // JsonObject upload = metrics1_doc.createNestedObject("upload");
-  JsonObject upload = metrics1_doc["upload"].add<JsonObject>();
+  JsonObject upload = metrics1_doc["upload"].to<JsonObject>();
   upload["stage"] = 0 ;// uploadStageName(upload_stage);
   upload["in_progress"] = upload_in_progress;
   upload["current_idx"] = current_upload_file_index;
   upload["files"] = num_of_files;
 
   // JsonObject log = metrics1_doc.createNestedObject("log");
-  JsonObject log = metrics1_doc["log"].add<JsonObject>();
+  JsonObject log = metrics1_doc["log"].to<JsonObject>();
   log["started"] = log_started;
   log["trip_dist"] = round(trip_distance_km * 100) / 100.0;
   log["points"] = trip_locations_count;
@@ -299,20 +302,20 @@ void updateAllCharacteristics()
   // Metrics part 2
   JsonDocument metrics2_doc;
   // JsonObject car = metrics2_doc.createNestedObject("car");
-  JsonObject car = metrics2_doc["car"].add<JsonObject>();
+  JsonObject car = metrics2_doc["car"].to<JsonObject>();
   car["eng_on"] = engine_on;
   car["rpm"] = round(rpmn);
-  car["kmph"] = round(kmph * 10) / 10.0;
-  car["gps_kmph"] = round(gps_speed_kmph * 10) / 10.0;
-  car["temp"] = round(engine_temp * 10) / 10.0;
-  car["fuel"] = round(fuel_level * 10) / 10.0;
-  car["batt"] = round(battery_voltage * 100) / 100.0;
-  car["vin"] = round(vin * 100) / 100.0;
+  car["kmph"] = round(kmph);
+  car["gps_kmph"] = round(gps_speed_kmph);
+  car["temp"] = round(engine_temp);
+  car["fuel"] = round(fuel_level);
+  car["batt"] = String(battery_voltage, 1);
+  car["vin"] = String(vin, 1);
   car["lpg"] = lpg_likely;
   
 
   // JsonObject ram = metrics2_doc.createNestedObject("ram");
-  JsonObject ram = metrics2_doc["ram"].add<JsonObject>();
+  JsonObject ram = metrics2_doc["ram"].to<JsonObject>();
   size_t total_heap = ESP.getHeapSize();
   size_t free_heap = ESP.getFreeHeap();
   ram["free_kb"] = round(free_heap / 102.4) / 10.0;

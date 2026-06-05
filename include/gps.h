@@ -332,19 +332,14 @@ void sync_rtc_from_gps(TinyGPSPlus &gps)
     log_i("\e[0;33m GPS Time behind \e[0m");
   }
 
-  gps_speed_valid = gps.speed.isValid();
-  gps_speed_kmph = gps_speed_valid ? gps.speed.kmph() : 0;
+  // gps_location_valid = gps.location.isValid();
+  // if (gps_location_valid)
+  // {
+  //   fix_lat = gps.location.lat();
+  //   fix_lng = gps.location.lng();
+  //   last_gps_fix_time = rtc.getEpoch();
+  // }
 
-  gps_location_valid = gps.location.isValid();
-  if (gps_location_valid)
-  {
-    fix_lat = gps.location.lat();
-    fix_lng = gps.location.lng();
-    last_gps_fix_time = rtc.getEpoch();
-  }
-
-  if (gps.satellites.isValid())
-    last_sat_count = gps.satellites.value();
 }
 
 BaseDetector detector;
@@ -383,9 +378,11 @@ void loop_gps()
     last_gps = now - last_gps2;
     last_gps2 = now;
 
-    // digitalWrite(LEDA, !digitalRead(LEDA));
+    gps_speed_valid = gps.speed.isValid();
+    gps_speed_kmph = gps_speed_valid ? gps.speed.kmph() : 0;
 
-    // sync_rtc_from_gps(gps);
+    if (gps.satellites.isValid())
+      last_sat_count = gps.satellites.value();
 
     if (gps.location.isValid()) {
       fix_lat = gps.location.lat();

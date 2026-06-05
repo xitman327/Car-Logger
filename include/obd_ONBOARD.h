@@ -264,6 +264,10 @@ int get_supported_pids(bool run_again = 0)
 
 void loop_elm()
 {
+    ELMprotocol = KLine.getProtocol();
+
+    
+
     if (elm_ready && !elm_connected)
     {
         rpmn = 0;
@@ -276,7 +280,6 @@ void loop_elm()
         if (KLine.initOBD2())
         {
             elm_connected = true;
-            // ELMprotocol = KLine.getCurrentProtocol();
         }
         else
         {

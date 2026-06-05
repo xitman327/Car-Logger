@@ -12,6 +12,8 @@
 #include "ArduinoJson.h"
 #include <time.h>
 
+
+
 bool FS_STARTED = 0;
 
 
@@ -101,7 +103,9 @@ enum{
 
 byte trip_start_condition = ENG_RPM;
 byte temp_trip_start_condition = trip_start_condition;
-#define CHARGING_VOLTAGE (float)13.5
+#define CHARGING_VOLTAGE (float)13.0
+#define min_voltage_for_obd (float)12.0
+bool low_voltage = 0;
 
 float charging_voltage = CHARGING_VOLTAGE;
 bool log_need_restart = 0;
@@ -124,11 +128,15 @@ bool debug_log_start = 0;
 #include "extra_functions.h"
 #include "lora.h"
 
+// #include <ElegantOTA.h>
+// WebServer server(80);
+
 TaskHandle_t Core0_CodeHandle = NULL;
 void Core0_Code(void *parameter){
   log_i("ELM ON CORE %d", xPortGetCoreID() );
   setup_elm();
   for(;;){
+    // if(!low_voltage){}
     loop_elm();
   }
 }
@@ -195,9 +203,11 @@ void setup()
 
   setup_lora();
 
+  // ElegantOTA.begin(&server);
+  // server.begin();
   xTaskCreatePinnedToCore(
     Core0_Code,         // Task function
-    "BlinkTask",       // Task name
+    "ELM TASK",       // Task name
     10000,             // Stack size (bytes)
     NULL,              // Parameters
     1,                 // Priority
@@ -233,6 +243,12 @@ void loop()
       sync_time_from_wifi();
     }
   }
+
+    
+  if(vin < min_voltage_for_obd){low_voltage = 1;}else{low_voltage = 0;}
+
+  // server.handleClient();
+  // ElegantOTA.loop();
 
 
   while (Serial.available()) {

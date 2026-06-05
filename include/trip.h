@@ -74,10 +74,8 @@ void trip_start(){
   time_t now = rtc.getEpoch();
   set_tripBaseName();
 
-  // JsonDocument fileHeader;
   fileHeader["start_timestamp"] = now;
-  fileHeader["trip_locations_count"] = trip_locations_count;
-  JsonArray log_objs = fileHeader["log_objs"].add<JsonArray>();
+  JsonArray log_objs = fileHeader["log_objs"].to<JsonArray>();
   log_objs.add("time");
   log_objs.add("lng");
   log_objs.add("lat");
@@ -88,6 +86,7 @@ void trip_start(){
       log_i("\e[0;36m List of pids to log: %d - PID %d - %s \e[0m]",i, pid_request_list[i], pname);
     }
   }
+
 
   if(sd_ready){
     if(sdfile.open(tripBaseName.c_str(), O_CREAT | O_RDWR)){
@@ -119,7 +118,7 @@ void populate_current_json() {
   trip_locations_buffer += String(now);
 
   if(gps_location_valid){
-    trip_locations_buffer += "," + String(fix_lng) + "," + String(fix_lat);
+    trip_locations_buffer += "," + String(fix_lng, 6) + "," + String(fix_lat, 6);
   }else{
     trip_locations_buffer += "," + String(-1) + "," + String(-1);
   }
@@ -161,26 +160,33 @@ void populate_current_json() {
 void trip_end() {
   if (!log_started) return;
   log_started = false;
-  fileHeader.clear();
-  log_i("trip_locations_buffer size %d", trip_locations_buffer.length());
-  if(trip_locations_buffer.length() > 100){
-    if(sd_ready){
-      if(sdfile.open(tripBaseName.c_str(), O_APPEND | O_AT_END | O_RDWR)){ // file should already exist
-        log_i("File Openned %s", tripBaseName);
-        uint32_t wrote = sdfile.println(trip_locations_buffer);
-        if(wrote > 0 && sdfile.size() > 0){
-          log_i("File wrote success. %s (%u bytes)", tripBaseName, wrote);
-        }else{
-          log_e("File error %d", sdfile.getError());
-        }
-        if(!sdfile.attrib(0)){Serial.println("clearing attributes failed");}
-      }else{
-        log_e("File error not oppened");
-      }
-      sdfile.close();
-    }
+  time_t now = rtc.getEpoch();
 
-    trip_locations_buffer.clear();
+  fileHeader["trip_locations_count"] = trip_locations_count;
+  fileHeader["stop_timestamp"] = now;
+  
+  String header_buffer;
+  serializeJson(fileHeader, header_buffer);
+  trip_locations_buffer += header_buffer + '\n';
+
+  if(sd_ready){
+    if(sdfile.open(tripBaseName.c_str(), O_APPEND | O_AT_END | O_RDWR)){ // file should already exist
+      log_i("File Openned %s", tripBaseName);
+      uint32_t wrote = sdfile.print(trip_locations_buffer);
+      if(wrote > 0 && sdfile.size() > 0){
+        log_i("File wrote success. %s (%u bytes)", tripBaseName, wrote);
+      }else{
+        log_e("File error %d", sdfile.getError());
+      }
+      if(!sdfile.attrib(0)){Serial.println("clearing attributes failed");}
+    }else{
+      log_e("File error not oppened");
+    }
+    sdfile.close();
   }
+
+  fileHeader.clear();
+  trip_locations_buffer.clear();
+  
 
 }

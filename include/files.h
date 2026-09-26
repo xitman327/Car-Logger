@@ -3,7 +3,9 @@
 #include <SdFat.h>
 #include <mbedtls/sha1.h>
 
-String my_server = "http://homeassistant.local:8099/esp32";
+extern void showLcdMessage(String message, uint16_t showTime, bool invert);
+
+String my_server = "https://mynas.xitos.uk/esp32";
 
 String generateKey()
 {
@@ -37,8 +39,6 @@ String generateKey()
         sprintf(hex + i * 2, "%02x", shaResult[i]);
 
     hex[40] = 0;
-    // Serial.println(base);
-    // Serial.println(String(hex));
     return String(hex);
 }
 
@@ -78,7 +78,6 @@ bool uploadFile(String filename)
 
     HTTPClient http;
 
-    // http.begin("http://192.168.1.100:8099/esp32/upload");
     http.begin(my_server + "/upload");
 
     http.addHeader("X-ESP32-KEY", generateKey());
@@ -249,14 +248,16 @@ void uploadPendingFiles()
     if (!isWifiOk())
     {
         lastUploadFail = FAIL_NO_WIFI;
-        Serial.println("WiFi not connected");
+        log_e("WiFi not connected");
+        showLcdMessage("No Wifi", 5, false);
         return;
     }
 
     if (!pingServer())
     {
         lastUploadFail = FAIL_SERVER_UNREACHABLE;
-        Serial.println("Server not reachable");
+        log_e("Server not reachable");
+        showLcdMessage("Server not reachable", 5, false);
         return;
     }
 
@@ -267,16 +268,17 @@ void uploadPendingFiles()
         if (!filename)
             continue;
 
-        Serial.print("Processing: ");
-        Serial.println(filename);
+        log_i("Processing: %s", filename);
+        showLcdMessage("Uploading file: \n" + filename, 5, false);
 
         // -------------------------
         // CSV check
         // -------------------------
         if (!isCsvFile(filename))
         {
-            Serial.println("Skip (not CSV)");
+            log_i("Skip (not CSV)");
             lastUploadFail = FAIL_NOT_CSV;
+            
             continue;
         }
 
@@ -285,8 +287,10 @@ void uploadPendingFiles()
         // -------------------------
         if (!fileExists(sd, filename))
         {
-            Serial.println("File missing");
+            log_e("File missing");
+            showLcdMessage("File missing", 5, false);
             lastUploadFail = FAIL_FILE_MISSING;
+            
             continue;
         }
 
@@ -297,12 +301,11 @@ void uploadPendingFiles()
 
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++)
         {
-            Serial.print("Upload attempt ");
-            Serial.println(attempt);
-
+            log_i("Upload attempt %d", attempt);
             if (!isWifiOk())
             {
                 lastUploadFail = FAIL_NO_WIFI;
+                
                 break;
             }
 
@@ -326,11 +329,11 @@ void uploadPendingFiles()
         // -------------------------
         if (success)
         {
-            Serial.println("Upload OK, deleting file");
+            log_i("Upload OK, deleting file");
 
             if (!sd.open(filename.c_str(), O_WRONLY))
             {
-                Serial.println("Delete failed (ignored)");
+                log_e("Delete failed (ignored)");
             }
             else
             {
@@ -341,7 +344,7 @@ void uploadPendingFiles()
         }
         else
         {
-            Serial.println("Upload failed");
+            log_e("Upload failed");
             lastUploadFail = FAIL_UPLOAD_ERROR;
         }
     }

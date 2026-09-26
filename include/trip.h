@@ -1,5 +1,5 @@
-#define CHUNK_SIZE 500
-int chunkIndex = 0;
+// #define CHUNK_SIZE 1000
+// int chunkIndex = 0;
 String tripBaseName;     // formatted datetime used as filename root
 
 
@@ -110,7 +110,7 @@ void trip_start(){
 }
 
 String trip_locations_buffer;
-#define print_to_sdcard_limit 500
+#define print_to_sdcard_limit 1000
 void populate_current_json() {
   if (!log_started) return;
   trip_locations_count++;
@@ -164,6 +164,10 @@ void trip_end() {
 
   fileHeader["trip_locations_count"] = trip_locations_count;
   fileHeader["stop_timestamp"] = now;
+  fileHeader["top_speed"] = kmph_max;
+  fileHeader["top_rpm"] = rpmn_max;
+  fileHeader["top_consumption"] = lpkm_max;
+  fileHeader["trip_distance_km"] = trip_distance_km;
   
   String header_buffer;
   serializeJson(fileHeader, header_buffer);
@@ -175,6 +179,7 @@ void trip_end() {
       uint32_t wrote = sdfile.print(trip_locations_buffer);
       if(wrote > 0 && sdfile.size() > 0){
         log_i("File wrote success. %s (%u bytes)", tripBaseName, wrote);
+        upload_request = 1;
       }else{
         log_e("File error %d", sdfile.getError());
       }

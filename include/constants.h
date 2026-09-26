@@ -641,6 +641,7 @@ static inline const char *pid_name(uint8_t pid)
         case 0xCD: return "Adapter Aux1";
         case 0xCE: return "Adapter Aux2";
         case 0xCF: return "Adapter Aux3";
+        case 0xD0: return "L/km calc";
 
         default:
             static char buf[24];

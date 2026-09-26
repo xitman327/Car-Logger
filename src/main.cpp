@@ -12,22 +12,18 @@
 #include "ArduinoJson.h"
 #include <time.h>
 
-
-
 bool FS_STARTED = 0;
-
 
 bool demo_mode = DEFAULT_DEMO_MODE;
 bool upload_request = 0;
-bool firebase_initialized = false;
+bool wifi_connect_request = false;
 
 float fix_lat, fix_lng;
 bool gps_location_valid = false;
 uint8_t last_sat_count = 0;
 time_t last_gps_fix_time = 0;
 
-const char* ntpServer = "pool.ntp.org";
-
+const char *ntpServer = "pool.ntp.org";
 
 #include <ESP32Time.h>
 ESP32Time rtc;
@@ -46,7 +42,16 @@ uint32_t last_wifi_attempt_ms = 0;
 uint8_t wifi_attempt_count = 0;
 bool time_corrected_this_trip = false;
 
-enum UploadStage : uint8_t { UploadIdle, UploadConnectWiFi, UploadAuth, UploadSend, UploadComplete, UploadDiscoverWiFi };
+enum UploadStage : uint8_t
+{
+  UploadIdle,
+  UploadConnectWiFi,
+  UploadAuth,
+  UploadSend,
+  UploadComplete,
+  UploadDiscoverWiFi
+};
+
 UploadStage upload_stage = UploadIdle;
 const uint8_t db_max_retries = 3;
 uint8_t db_retry_count = 0;
@@ -77,7 +82,6 @@ bool gps_speed_valid = false;
 
 float current_consumption_l = 0;
 
-
 float lts_trip = 0;
 
 bool log_started = 0;
@@ -87,11 +91,10 @@ bool debug_dashboard_enabled = false;
 int num_of_files = 0;
 String dir_filenames_array[max_filenames];
 
-
 extern int num_of_files;
 
-
-enum{
+enum
+{
   ADAPT_VOLTAGE,
   OBD_VOLTAGE,
   ENG_RPM,
@@ -99,7 +102,7 @@ enum{
   GPS_SPEED,
   GPS_POS_ALTERED,
   DEBUG_FORCED
-}trip_start_condition_enum;
+} trip_start_condition_enum;
 
 byte trip_start_condition = ENG_RPM;
 byte temp_trip_start_condition = trip_start_condition;
@@ -124,32 +127,32 @@ bool debug_log_start = 0;
 #include "trip.h"
 #include "files.h"
 #include "lcd.h"
-#include "debug.h"
 #include "extra_functions.h"
-#include "lora.h"
+// #include "lora.h"
+#include "debug.h"
+
 
 // #include <ElegantOTA.h>
 // WebServer server(80);
 
 TaskHandle_t Core0_CodeHandle = NULL;
-void Core0_Code(void *parameter){
-  log_i("ELM ON CORE %d", xPortGetCoreID() );
+void Core0_Code(void *parameter)
+{
+  log_i("ELM ON CORE %d", xPortGetCoreID());
   setup_elm();
-  for(;;){
-    // if(!low_voltage){}
+  for (;;)
+  {
+    // if(!low_voltage || log_started){loop_elm();}else{delay(1000);}
     loop_elm();
   }
 }
 
-
 void setup()
 {
 
-
-
   pinMode(LEDA, OUTPUT);
   pinMode(LEDB, OUTPUT);
-  
+
   // load_settings();
 
   analogReadResolution(12);
@@ -158,9 +161,9 @@ void setup()
   WiFi.mode(WIFI_MODE_STA);
   WiFi.setAutoReconnect(false);
 
-  force_connect_wifi(); // DEBUG
+  // force_connect_wifi(); // DEBUG
 
-  esp_log_level_set("*",ESP_LOG_INFO);
+  esp_log_level_set("*", ESP_LOG_INFO);
 
   Serial.begin(115200);
 
@@ -172,21 +175,29 @@ void setup()
   setup_lcd();
   sensors_setup();
 
-  if(SPIFFS.begin(true)){
+  if (SPIFFS.begin(true))
+  {
     log_i("FS STARTED");
     FS_STARTED = 1;
-  }else{
-    if(SPIFFS.format()){
+  }
+  else
+  {
+    if (SPIFFS.format())
+    {
       log_i("FS FORMAT");
-      if(SPIFFS.begin()){
+      if (SPIFFS.begin())
+      {
         log_i("FS STARTED");
         FS_STARTED = 1;
-      }else{
+      }
+      else
+      {
         FS_STARTED = 0;
         log_e("FS FAILLED");
       }
     }
-    else{
+    else
+    {
       log_e("FS FORMAT FAILLED");
       FS_STARTED = 0;
     }
@@ -201,32 +212,30 @@ void setup()
 
   setup_button();
 
-  setup_lora();
+  // setup_lora();
 
   // ElegantOTA.begin(&server);
   // server.begin();
   xTaskCreatePinnedToCore(
-    Core0_Code,         // Task function
-    "ELM TASK",       // Task name
-    10000,             // Stack size (bytes)
-    NULL,              // Parameters
-    1,                 // Priority
-    &Core0_CodeHandle,  // Task handle
-    0                  // Core 0
+      Core0_Code,        // Task function
+      "ELM TASK",        // Task name
+      10000,             // Stack size (bytes)
+      NULL,              // Parameters
+      1,                 // Priority
+      &Core0_CodeHandle, // Task handle
+      0                  // Core 0
   );
-  log_i("MAIN ON CORE %d", xPortGetCoreID() );
-
+  log_i("MAIN ON CORE %d", xPortGetCoreID());
 }
 
 #define afr_gassoline 14.7
 #define dens_gassoline 710.0
 
-
 #define obd_pull_time 200
 
 static uint8_t hue = 0;
 
-#define log_time 2000 //1000 or 2000
+#define log_time 2000 // 1000 or 2000
 
 #define led_time 20
 #define debug_report_time 2000
@@ -238,22 +247,34 @@ uint32_t tm_log, tm_led;
 uint32_t tm_debug_report = 0;
 void loop()
 {
-  if(WiFi.isConnected()){
-    if(!wifi_time_synced){
+  if (WiFi.isConnected())
+  {
+    if (!wifi_time_synced)
+    {
       sync_time_from_wifi();
     }
   }
 
-    
-  if(vin < min_voltage_for_obd){low_voltage = 1;}else{low_voltage = 0;}
+  manage_wifi();
+  task_upload_data();
+
+  if (vin < min_voltage_for_obd)
+  {
+    low_voltage = 1;
+  }
+  else
+  {
+    low_voltage = 0;
+  }
 
   // server.handleClient();
   // ElegantOTA.loop();
 
-
-  while (Serial.available()) {
+  while (Serial.available())
+  {
     char key = Serial.read();
-    if (key == 'T') {
+    if (key == 'T')
+    {
       demo_mode = !demo_mode;
       Serial.printf("DBG: Demo mode %s\n", demo_mode ? "ENABLED" : "DISABLED");
       continue;
@@ -261,12 +282,10 @@ void loop()
     handleDebugCommand(key);
   }
 
-  
-
-  if(upload_request){
-    // task_upload_data();
-  }
-
+  // if (upload_request)
+  // {
+  //   task_upload_data();
+  // }
 
   loop_lcd();
   // loop_elm(); //// moved to Core 0
@@ -277,74 +296,124 @@ void loop()
 
   // loop_lora();
 
-  if(millis() - tm_other > some_other_time){
+  if (millis() - tm_other > some_other_time)
+  {
     tm_other = millis();
     get_filenames(true);
   }
- 
 
-  if(millis() - tm_log > log_time){
+  if (millis() - tm_log > log_time)
+  {
     tm_log = millis();
 
     // restart trip if pids change
-    if(log_need_restart && log_started){
+    if (log_need_restart && log_started)
+    {
       log_i("Trip Restarting!");
       trip_end();
       trip_start();
       log_need_restart = 0;
-    }else if(log_need_restart && !log_started){
+    }
+    else if (log_need_restart && !log_started)
+    {
       log_i("No Trip Started!");
       log_need_restart = 0;
     }
 
-    switch(trip_start_condition){
-      case ADAPT_VOLTAGE:
-        if(vin > charging_voltage && !log_started){trip_start();}else
-        if(vin < charging_voltage && log_started){trip_end();}
+    switch (trip_start_condition)
+    {
+    case ADAPT_VOLTAGE:
+      if (vin > charging_voltage && !log_started)
+      {
+        trip_start();
+      }
+      else if (vin < charging_voltage && log_started)
+      {
+        trip_end();
+      }
       break;
-      case OBD_VOLTAGE:
-        if(battery_voltage > charging_voltage && !log_started){trip_start();}else
-        if(battery_voltage < charging_voltage && log_started){trip_end();}
+    case OBD_VOLTAGE:
+      if (battery_voltage > charging_voltage && !log_started)
+      {
+        trip_start();
+      }
+      else if (battery_voltage < charging_voltage && log_started)
+      {
+        trip_end();
+      }
       break;
-      case ENG_RPM:
-        if(rpmn > 350 && !log_started){trip_start();}else
-        if(rpmn < 350 && log_started){trip_end();}
+    case ENG_RPM:
+      if (rpmn > 350 && !log_started)
+      {
+        trip_start();
+      }
+      else if (rpmn < 350 && log_started)
+      {
+        trip_end();
+      }
       break;
-      case VEHECLE_SPEED:
-        if(kmph > 5.0 && !log_started){trip_start();}else
-        if(kmph < 5.0 && log_started){trip_end();}
+    case VEHECLE_SPEED:
+      if (kmph > 5.0 && !log_started)
+      {
+        trip_start();
+      }
+      else if (kmph < 5.0 && log_started)
+      {
+        trip_end();
+      }
       break;
-      case GPS_SPEED:
-        if (gps.speed.isValid()) {
-          double s = gps.speed.kmph();
-          if (!log_started && s > 6.0) {trip_start();} 
-          else if (log_started && s < 3.0) {trip_end();}
+    case GPS_SPEED:
+      if (gps.speed.isValid())
+      {
+        double s = gps.speed.kmph();
+        if (!log_started && s > 6.0)
+        {
+          trip_start();
         }
+        else if (log_started && s < 3.0)
+        {
+          trip_end();
+        }
+      }
       break;
-      case GPS_POS_ALTERED:
-        if (detector.updateLeaveBase(gps) && !log_started) {trip_start();}
-        if (detector.updateStationaryAndMaybeSetBase(gps) && log_started) {trip_end();}
+    case GPS_POS_ALTERED:
+      if (detector.updateLeaveBase(gps) && !log_started)
+      {
+        trip_start();
+      }
+      if (detector.updateStationaryAndMaybeSetBase(gps) && log_started)
+      {
+        trip_end();
+      }
       break;
-      case DEBUG_FORCED:
-        if(debug_log_start && !log_started){trip_start();}else
-        if(!debug_log_start && log_started){trip_end();}
+    case DEBUG_FORCED:
+      if (debug_log_start && !log_started)
+      {
+        trip_start();
+      }
+      else if (!debug_log_start && log_started)
+      {
+        trip_end();
+      }
       break;
-      default:
+    default:
       break;
-      
     }
 
-    if(log_started){
+    if (log_started)
+    {
       digitalWrite(LEDA, !digitalRead(LEDA));
       populate_current_json();
-    }else if(!log_started && digitalRead(LEDA)){digitalWrite(LEDA, LOW);}
-
-
+    }
+    else if (!log_started && digitalRead(LEDA))
+    {
+      digitalWrite(LEDA, LOW);
+    }
   }
-  
-  if(debug_dashboard_enabled && millis() - tm_debug_report > debug_report_time){
+
+  if (debug_dashboard_enabled && millis() - tm_debug_report > debug_report_time)
+  {
     tm_debug_report = millis();
     printDebugDashboard();
   }
 }
-

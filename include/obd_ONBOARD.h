@@ -149,6 +149,7 @@ void setup_elm()
         // KLine.setDebug(Serial);
         KLine.setProtocol("Automatic");
         KLine.setChecksumType(2);
+        KLine.setReadTimeout(500);
 
         elm_ready = true;
         log_i("ELM began");
@@ -187,6 +188,7 @@ void convertion()
         {
             engine_on = 0;
         }
+
         if (engine_on != engine_on_prev)
         {
             engine_on_prev = engine_on;
@@ -201,6 +203,7 @@ void convertion()
                 engine_start_ms = millis();
             }
         }
+
         update_lpg_state();
 
         if (kmph > (float)1.0)
@@ -221,6 +224,10 @@ void convertion()
             current_consumption_l = lt_dts;
             lts_trip += lt_dts;
         }
+
+        kmph_max = max(kmph_max, kmph);
+        rpmn_max = max(rpmn_max, rpmn);
+        lpkm_max = max(lpkm_max, lpkm);
     }
 }
 bool request_supported_pids = 0;
@@ -229,6 +236,7 @@ uint32_t resp;
 uint32_t supported_PIDs_1_20 = 0, supported_PIDs_21_40 = 0, supported_PIDs_41_60 = 0, supported_PIDs_61_80 = 0;
 uint8_t i_supportred_pids;
 uint8_t supported_pids_status = 0;
+extern bool low_voltage;
 
 int get_supported_pids(bool run_again = 0)
 {
@@ -266,16 +274,17 @@ void loop_elm()
 {
     ELMprotocol = KLine.getProtocol();
 
-    
-
     if (elm_ready && !elm_connected)
     {
-        rpmn = 0;
-        kmph = 0;
-        maf = 0;
-        throttle_pos = 0;
-        engine_temp = 0;
-        battery_voltage = 0;
+        if (!debug_log_start)
+        {
+            rpmn = 0;
+            kmph = 0;
+            maf = 0;
+            throttle_pos = 0;
+            engine_temp = 0;
+            battery_voltage = 0;
+        }
 
         if (KLine.initOBD2())
         {
@@ -286,6 +295,7 @@ void loop_elm()
             nodata_count++;
             if (nodata_count > 10)
             {
+                elm_connected = false;
                 // setup_elm();
                 nodata_count = 0;
             }
@@ -330,6 +340,9 @@ void loop_elm()
                     break;
                 case 0xcF:
                     pid_values[pid_request_list_index] = aux3;
+                    break;
+                case 0xD0:// calculated L/km
+                    pid_values[pid_request_list_index] = lpkm;
                     break;
 
                 default:

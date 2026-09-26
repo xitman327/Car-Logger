@@ -39,8 +39,9 @@ void printDebugDashboard() {
     last_fix_str.c_str(),
     gps_speed_kmph,
     last_gps);
-  Serial.printf("WiFi: %s | IP:%s | signal:%d%%\n",
-    WiFi.isConnected() ? "CONNECTED" : "OFFLINE",
+  Serial.printf("WiFi[%d]: %s | IP:%s | signal:%d%%\n",
+    current_network_index,
+    get_wifi_status_string(),
     ip.c_str(),
     wifi_signal_percent());
   Serial.printf("OBD Adapter: %s Car: %s protocol: %s Vin: %3.1f\n", elm_ready?"Connected":"Error", elm_connected?"Connected":"Error" , ELMprotocol.c_str(), vin);
@@ -132,7 +133,8 @@ void handleDebugCommand(char key) {
     case 'J':
     if(!demo_mode){break;}
       Serial.println("DBG: Upload requested (J)");
-      uploadPendingFiles();
+      upload_request = 1;
+      // uploadPendingFiles();
       break;
     case 'D':
     if(!demo_mode){break;}
